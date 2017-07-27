@@ -1,0 +1,4791 @@
+#!/usr/bin/perl -w
+use strict;
+use Cwd;
+use Getopt::Std;
+use Parallel::ForkManager;
+
+my $progName = $0;
+$progName    =~ s/^.*\///;
+$progName    =~ s/_v(\d+\.\d+)//;
+my $version  = $1 || '3.1';
+my $created  = '011017';
+my $modified = '072117';
+
+# Display help
+my $help = $ARGV[0];
+if( $help and $help =~ /--help/ ){
+	Messages::die_with_usage( $progName, $version, $created, $modified );
+}
+
+my %options;
+# ABDFGIMOPSX
+# abcdghpqrsxyz
+getopts('I:S:F:A:D:M:B:P:X:O:G:p:abcdghqrsxyz', \%options);
+
+# Display help
+Messages::die_with_usage( $progName, $version, $created, $modified )
+	if( $options{'h'} or ! %options );
+
+# Print pipeline scheme
+Messages::print_scheme( $progName, $version )
+	if( $options{'x'} );
+
+# Print example parameters file
+Messages::print_parameter_file( $version )
+	if( $options{'y'} );
+
+# Print ARS parameters' file
+Messages::print_ars_file()
+	if( $options{'z'} );
+
+# Create output directory (if specified)
+my $outDir = $options{'O'} || '.';
+`mkdir -p $outDir`
+	if $outDir;
+
+# Read in paths and parameters
+my $Parameters = new PARAMETERS(
+ 	options => \%options,
+	outDir  => $outDir,
+);
+
+#-------------------------------------------------------------------------------
+# MAIN
+#||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+print STDERR "\n\e[0;36m-------------------------------------------------------------------------------\e[0m\n";
+my $time0 = time;
+
+# Processing input files
+#-------------------------------------------------------------------------------
+=pod
+# Inputs:
+I SRA_ID
+S SRA
+F FASTQ_read1:2 FASTQ_read2
+A BAM
+D DAT
+=cut
+
+# Get input type together with correct files
+#-------------------------------------------------------------------------------
+my $itype  = $Parameters->get_value('itype');
+my @inputs = split( ',', $Parameters->get_value($itype) );
+my $iNum   = scalar @inputs;
+
+# Make the @bedFiles array recyclable for all BAM files
+my $bedFiles = make_recycling_bedFiles( $Parameters, $iNum )
+	if( $Parameters->get_value('B') );
+
+my @datFiles;
+for( my $i = 1; $i <= $iNum; $i++ ){
+	my $input = $inputs[$i-1];
+	my $bFile = $bedFiles->[$i-1] || 0;
+	print STDERR "\n>> Processing input \'$itype\' ($i/$iNum)\n";
+	print STDERR "  > $input\n\n";
+
+	# Download SRA files from NCBI
+	#-------------------------------------------------------------------------------
+	if( $Parameters->get_value('I') ){
+		print STDERR "Retrieving SRA file from NCBI's server\n";
+		print STDERR "  > $input\n";
+
+		my $Sra = new SRA(
+			sra_id     => $input,
+			parameters => $Parameters,
+			outDir     => $outDir,
+		);
+		$Sra->download;
+
+		# Save SRA file
+		$input = $Sra->get_file;
+		unless( $Parameters->get_value('SAVE_SRA') ){
+			`rm -f $input 2> /dev/null`;
+		}
+		print STDERR "\e[0;32m[ DONE ]\e[0m\n";
+		$Parameters->set_value( 'S', $input );
+	}
+	# Kill switch for SRA files
+	next if $Parameters->get_value('f');
+
+	# Create FASTQ files from SRA files
+	#-------------------------------------------------------------------------------
+	if( $Parameters->get_value('S') ){
+		print STDERR "Generate FASTQ file from SRA file\n";
+		print STDERR "  > $input\n";
+
+		my $Fastq = new FASTQ(
+			parameters => $Parameters,
+			outDir     => $outDir,
+		);
+		$Fastq->generate( $input );
+		unless( $Parameters->get_value('q') ){
+			$Fastq->quality_control;
+			$Parameters->set_value( 'q', 1 );
+		}
+
+		# Save SRA file (no longer in use)
+		unless( $Parameters->get_value('SAVE_SRA') ){
+			`rm -f $input 2> /dev/null`;
+		}
+		my $fastq1 = $Fastq->get_file1;
+		my $fastq2 = $Fastq->get_file2;
+
+		if( $fastq2 ){
+			$input = "$fastq1:$fastq2";
+		}
+		else{
+			$input = $fastq1;
+		}
+		print STDERR "\e[0;32m[ DONE ]\e[0m\n";
+		$Parameters->set_value( 'F', $input );
+
+	}
+	# Kill switch for FASTQ files
+	next if $Parameters->get_value('a');
+
+	# Align reads to genome
+	#-------------------------------------------------------------------------------
+	if( $Parameters->get_value('F') ){
+		print STDERR "Align reads to reference genome\n";
+
+		my @jFiles = split( ':', $input );
+		my $jFile1 = $jFiles[0];
+		my $jFile2 = $jFiles[1];
+
+		print STDERR "  > $jFile1\n";
+		print STDERR "  > $jFile2\n" if $jFile2;
+
+		my $Fastq = new FASTQ(
+			parameters => $Parameters,
+			outDir     => $outDir,
+		);
+		$Fastq->set_file1( $jFile1 );
+		$Fastq->set_file2( $jFile2 ) if $jFile2;
+		$Fastq->quality_control
+			unless( $Parameters->get_value('q') );
+
+		# Align reads to genome
+		my $Alignment = new ALIGNMENT(
+			fastq      => $Fastq,
+			parameters => $Parameters,
+			outDir     => $outDir,
+		);
+		$Alignment->align_to_genome;
+		unless( $Parameters->get_value('r') ){
+			$Alignment->remove_duplicates;
+			$Parameters->set_value( 'r', 1 );
+		}
+
+		# Save FASTQ files (no longer in use)
+		unless( $Parameters->get_value('SAVE_FASTQ') ){
+			`rm -f $jFile1 2> /dev/null`;
+			`rm -f $jFile2 2> /dev/null` if $jFile2;
+		}
+		$input = $Alignment->get_file;
+		print STDERR "\e[0;32m[ DONE ]\e[0m\n";
+		$Parameters->set_value( 'A',  $input );
+	}
+
+	# Take BAM file as input and call peaks if no BED file is provided or it's not requested
+	#-------------------------------------------------------------------------------
+	my $sbFlag;
+	if( $Parameters->get_value('A') ){
+		# Index and split BAM file by chromosomes
+		print STDERR "Index and split BAM file\n";
+		print STDERR "  > $input\n";
+
+		my $Alignment = new ALIGNMENT(
+			bamFile    => $input,
+			parameters => $Parameters,
+			outDir     => $outDir,
+		);
+		$Alignment->remove_duplicates
+			unless( $Parameters->get_value('r') );
+		$Alignment->split_bam_by_chr;
+		$sbFlag = 1;
+
+		unless( $Parameters->get_value('c') or $bFile ){
+			# Call peaks with MACS2
+			print STDERR "Call peaks from BAM file\n";
+			print STDERR "  > $input\n";
+
+			my $Peaks = new PEAKS(
+				bamFile    => $Alignment->get_file,
+				parameters => $Parameters,
+				outDir     => $outDir,
+			);
+			$Peaks->call_peaks;
+			$Peaks->split_peaks_by_chr;
+			$Peaks->count_reads_under_peak( $Alignment->get_chr_files );
+
+			# Save BED files
+			$bFile = $Peaks->get_file;
+			unless( $Parameters->get_value('SAVE_BED') ){
+				`rm -f $bFile 2> /dev/null`;
+			}
+			# Remove per chromosome BED files (no longer used)
+			`rm -f $outDir/chr*.bed 2> /dev/null`;
+		}
+		print STDERR "\e[0;32m[ DONE ]\e[0m\n";
+		$Parameters->set_value( 'B', $bFile )
+			if $bFile;
+		$input = $Alignment->get_file;
+	}
+	# Kill switch for BAM files
+	if( $Parameters->get_value('d') ){
+		# Remove per chromosome BAM files (no longer used)
+		`rm -f $outDir/chr*.bam 2> /dev/null`;
+		next;
+	}
+
+	# Find allelic behavior
+	#---------------------------------------------------------------------------
+	if( $Parameters->get_value('A') ){
+		# Index and split BAM file by chromosomes
+		print STDERR "Index and split BAM file\n";
+
+		my $Alignment = new ALIGNMENT(
+			bamFile    => $input,
+			parameters => $Parameters,
+			outDir     => $outDir,
+		);
+		$Alignment->split_bam_by_chr
+			unless $sbFlag;
+
+		# Find allele-dependent behavior
+		my $base = $input;
+		$base    =~ s/^.*\///;
+		$base    =~ s/.bam$//;
+		# Create directory to deposit ASB file
+		my $datFile = "$outDir/$base.dat";
+
+		my $AD_behavior = new ASB(
+			file       => $datFile,
+			parameters => $Parameters,
+			outDir     => $outDir,
+		);
+
+		# Filter SNPs within peaks and split by chromosome
+		# if genotyping data is to be used
+		my $Genotyping = new GENOTYPING(
+			outDir     => $outDir,
+			parameters => $Parameters,
+		);
+		print STDERR "Load genotyping information\n";
+
+		my $genFile;
+		if( $Parameters->get_value('G') and !$Parameters->get_value('g') ){
+			$genFile = $Parameters->get_value('G');
+		}
+		else{
+			if( $Parameters->get_value('B') ){
+				$genFile = $Genotyping->generate_file( $Parameters->get_value('B') );
+				$Parameters->set_value( 'b', 1 );
+			}
+			else{
+				die "ERROR: Genotyping files cannot be generated. BED file not present\n";
+			}
+		}
+		$Genotyping->load_file( $genFile );
+		if( $Parameters->get_value('B') and !$Parameters->get_value('b') ){
+			my $gStatus = $Genotyping->filter( $bFile );
+			next unless $gStatus;
+		}
+		$Genotyping->split_gen_by_chr;
+		my $genFiles = $Genotyping->get_chr_files;
+		print STDERR "\e[0;32m[ DONE ]\e[0m\n";
+
+		print STDERR "Find ASB at heterozygous positions\n";
+		$AD_behavior->find_allelic_behavior( $Alignment, $genFiles );
+
+		# Save BAM file (no longer in use)
+		unless( $Parameters->get_value('SAVE_BAM') ){
+			`rm -f $input 2> /dev/null`;
+		}
+		# Save BED file (no longer in use)
+		if( $bFile and !$Parameters->get_value('SAVE_BED') ){
+			`rm -f $bFile 2> /dev/null`;
+		}
+		# Remove GEN files (no longer in use)
+		`rm -f $outDir/*.gen 2> /dev/null`;
+		# Remove per chromosome DAT files (no longer in use)
+		`rm -f $outDir/chr*.dat 2> /dev/null`;
+		# Remove any unused chomosome BAM file
+		`rm -f $outDir/chr*.bam 2> /dev/null`;
+
+		push( @datFiles, $datFile );
+		print STDERR "\e[0;32m[ DONE ]\e[0m\n";
+	}
+
+	# Load DAT files
+	#---------------------------------------------------------------------------
+	if( $Parameters->get_value('D') ){
+		# Index and split BAM file by chromosomes
+		print STDERR "Load DAT file\n";
+		push( @datFiles, $input );
+		print STDERR "\e[0;32m[ DONE ]\e[0m\n";
+	}
+}
+# Kill switches
+exit if $Parameters->get_value('f');
+exit if $Parameters->get_value('a');
+exit if $Parameters->get_value('d');
+
+# Save DAT files
+$Parameters->set_value( 'D', join( ',', @datFiles ) );
+print STDERR "DAT files: @datFiles\n";
+
+# Annotate DAT files
+#-------------------------------------------------------------------------------
+if( $Parameters->get_value('D') ){
+	# Second phase: obtain final results from all experiments
+	print STDERR "\n\e[0;36mINFO: Preparing results\e[0m\n";
+
+	my @iFiles = split( ',', $Parameters->get_value('D') );
+
+	# Load up the FDR lookup table
+	print STDERR "Load ARS table\n";
+
+	my $ArScores = new ARS(
+		file       => $Parameters->get_value('ARS_FILE'),
+		outDir     => $outDir,
+		parameters => $Parameters,
+	);
+	print STDERR "\e[0;32m[ DONE ]\e[0m\n";
+
+	# Make a selection based on given parameters
+	print STDERR "Merge allele-dependent candidate SNPs\n";
+	my $asbFile = "$outDir/results.asb";
+
+	my $Postprocess = new POSTPROCESSING(
+		file       => $asbFile,
+		parameters => $Parameters,
+		outDir     => $outDir,
+	);
+	$Postprocess->merge_positions( \@iFiles );
+	$Postprocess->add_statistics;
+	$Postprocess->add_ars( $ArScores );
+	$Postprocess->add_reference_bases;
+
+	$Postprocess->find_motif_matches( $Parameters->get_value('M') )
+		if $Parameters->get_value('M');
+
+	$Postprocess->annotate( 'DISEASE' );
+	$Postprocess->annotate( 'GENE' );
+	print STDERR "\e[0;32m[ DONE ]\e[0m\n";
+
+	# Sort files in descending order by confidence values
+	`head -n1 $asbFile > $asbFile.sorted`;
+	`tail -n +2 $asbFile | sort -nrk15,15 >> $asbFile.sorted`;
+	`mv -f $asbFile.sorted $asbFile`;
+
+	# Copy DAT files to $outDir
+	if( $Parameters->get_value('SAVE_DAT') ){
+
+		for my $iFile ( @iFiles ){
+			my $sFile = $iFile;
+			$sFile    =~ s/^.*\//$outDir\//;
+			`cp -f $iFile $sFile 2> /dev/null`
+				unless -s $sFile;
+		}
+	}
+
+	# Save ASB file to $outDir
+	my $sFile = $asbFile;
+	$sFile    =~ s/^.*\//$outDir\//;
+	`cp -f $asbFile $sFile 2> /dev/null`;
+
+	if( $Parameters->get_value('M') ){
+		# Save HIT file to $outDir
+		my $hitFile = $Postprocess->get_hitFile;
+		$sFile      = $hitFile;
+		$sFile      =~ s/^.*\//$outDir\//;
+		`cp -f $hitFile $sFile 2> /dev/null`;
+	}
+
+	my $time1   = time;
+	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
+	print STDERR "\n\e[0;36mTotal time elapsed: $elapsed min\e[0m\n";
+	print STDERR "\e[0;32m[ DONE ]\e[0m\n";
+}
+
+exit;
+
+
+
+#||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+# SUBROUTINES
+#-------------------------------------------------------------------------------
+
+sub make_recycling_bedFiles
+{
+	my $Parameters = shift;
+	my $iNum       = shift;
+	my $bFiles     = $Parameters->get_value('B');
+	my @bedFiles;
+
+	if( $bFiles )	{
+		@bedFiles = split( ',', $bFiles );
+		my $bNum  = scalar @bedFiles;
+
+		if( $bNum < $iNum )		{
+			do{
+				@bedFiles = ( @bedFiles, @bedFiles );
+				$bNum = scalar @bedFiles;
+			}
+			until( $bNum >= $iNum );
+		}
+	}
+
+	return \@bedFiles;
+}
+
+sub add_cse_column
+{
+	my $file   = shift;
+	my $output = $file . ".tmp";
+	open( IN, $file ) or
+	(
+	 	print STDERR "  ERROR: Could not open file $file at 'add_cse_column'\n" and
+		return 0
+	);
+	open( OUT, ">$output" ) or
+		die "ERROR: Could not create file $output at 'add_cse_column'\n";
+
+	my $header = <IN>;
+	chomp $header;
+	my @header = split( "\t", $header );
+	splice( @header, 3, 0, "UCSC_COOR" );
+	print OUT join( "\t", @header ), "\n";
+
+	while( my $line = <IN> )
+	{
+		chomp $line;
+		my @split = split( "\t", $line );
+		my $chr   = $split[0];
+		my $start = $split[1];
+		my $end   = $split[2];
+		my $coor  = "$chr:$start-$end";
+		splice( @split, 3, 0, $coor );
+		print OUT join( "\t", @split ), "\n";
+	}
+
+	`head -n1 $output > $file`;
+	`tail -n +2 $output | sort -u | sort -grk18,18 >> $file`;
+	`rm -f $output`;
+
+	return 1;
+}
+
+#-------------------------------------------------------------------------------
+package Messages;
+use warnings;
+use strict;
+
+sub print_options
+{
+	my $options = shift;
+	print STDERR "\e[1;33mOPTIONS:\e[0m\n";
+
+	while( my( $var, $value ) = each %$options )
+	{
+		print STDERR "  $var:  \e[0;33m$value\e[0m\n";
+	}
+	print STDERR "\n";
+
+	return 1;
+}
+
+sub die_with_usage
+{
+	my $progName = shift;
+	my $version  = shift;
+	my $created  = shift;
+	my $modified = shift;
+	#getopts('I:S:1:2:B:D:b:p:C:h', \%options);
+
+	die "\e[0;36m
+--------------------------------------------------------------------------------
+>> Created by Mario Pujato <<\n
+Created:  $created
+Modified: $modified\n
+Version: $version\n
+================================================================================\e[0;33m
+Identify Allele-Specific Behavior (ASB) at
+heterozygous positions from sequencing data\e[0m
+\e[1;33m
+USAGE: $progName [options] <arguments>\e[0m\n
+
+  [options]
+
+    ARGUMENTS
+
+      -p  Number of threads to use in parallelized routines
+
+      -O  Name of output folder
+
+      -P  Parameters file
+
+      -I  SRA IDs. Comma-separated list
+          Based on these IDs, SRA files will be downloaded from NCBI
+
+      -S  SRA files. Comma-separated list
+
+      -F  FASTQ files (paired-end reads experiments). Comma-separated list
+          Paired-end reads experiments should be given in pairs, separated by \":\"
+          (example: EXP1_FQ1:EXP1_FQ2,EXP2_FQ1:EXP2_FQ2,EXP3_FQ,EXP4_FQ...)
+
+      -A  Alignment files (BAM format). Comma-separated list
+          The file must be sorted
+          Duplicate reads will be removed unless the -r option is set
+
+      -D  DAT files. Comma-separated list
+          This is the raw output of the MARIO pipeline (one per BAM file)
+          Given these files, the pipeline will score and annotate the ASB
+          predictions
+
+      -X  Path to index files
+          (For STAR, only the path is required)
+          (For BOWTIE2, the path and the string before the \".*.bt2\" part is required)
+
+
+      -G  Genotyping file containing ONLY heterozygous positions
+          4-column format: CHR START END STATUS (TAB delimited)
+		  The field STATUS takes values 0:genotyped and 1:imputed
+		  If not provided, MARIO returns predicted ASBs
+
+      -B  (optional) BED files. Comma-separated list
+          (must match BAM files or will be recycled for all BAM files)
+
+      -M  (optional) Motif files
+          (provided as a single file listing motif files)
+
+    SWITCHES
+
+      -h  (--help) This help message
+
+      -s  Use splice-aware alignment
+          (specific for correct processing of RNA-seq experiments)
+
+      -r  Do not remove duplicate reads
+          (the default behavior is to remove duplicate reads)
+
+      -f  Do not generate FASTQ files
+          (downloads SRA file and exits)
+
+      -a  Do not align to genome
+          (generates FASTQ files and exits)
+
+      -d  Do not find and report ASBs
+          (aligns reads to genome and exits and,
+          depending on the -c switch, it may also call peaks)
+
+      -c  Do not call peaks
+          (aligns reads to genome and exits)
+
+      -g  Do not use genotyping information
+          (searches for allelic behavior at every single position)
+
+      -b  Do not require het SNPs to fall within peaks
+          (het SNPs are normally required to fall within peaks)
+
+      -q  Do not perform quality control on FASTQ files
+
+      -x  Print pipeline scheme to the screen
+
+      -y  Generate a default parameters' file
+
+      -z  Generate a default Allelic reproducibility score (ARS) file
+
+\e[0;36m--------------------------------------------------------------------------------
+  NOTES:
+
+    Required inputs:
+      -P, -C and one of -IS12AD arguments
+
+    Priority of input files:
+      If multiple input files are privided (e.g.: SRA_ID, FASTQ and BAM files),
+      the pipeline starts with the file with the highest priority.
+      Priority:
+        I<S<1<2<A<D (the DAT file has the highest priority)
+
+    Priority of switches:
+      Priority:
+        d<a<f
+      For example, if -f is called, the pipeline generates FASTQ files and
+      exits, even if the -a or -d options are concurrently given
+--------------------------------------------------------------------------------
+\n";
+}
+
+sub print_scheme
+{
+	my $progName = shift;
+	my $version  = shift;
+	print "\nScheme of $progName version $version pipeline
+
++-----------------------------------------------------------+
+|                                                           |
+| +-----[I]                       +-----[B]       +-----[G] |
+| |       |                       |       |       |       | |
+| | SRAID |                       |  BED  | ----> |  GEN  | |
+| |       |                       |       |  (b)  |       | |
+| +-------+                       +-------+       +-------+ |
+|     |                               ^               |     | 
+|     |                               | (c)           |     |
+|     v                               |               v     |
+| +-----[S]       +-----[F]       +-----[A]       +-----[D] |          ---          +-----[P]
+| |       |       |       |       |       |       |       | |        /     \\        |       |
+| |  SRA  | ----> | FASTQ | ----> |  BAM  | ----> |  DAT  | | ----> |  ASB  | <---- |  ANNO |
+| |       |  (f)  |       |  (a)  |       |  (d)  |       | |        \\     /        |       |
+| +-------+       +-------+       +-------+       +-------+ |          ---          +-------+
+|                    (q)              ^                     |           |
+|                                     |                     |           |
+|                                     |                     |           v
+|                                 +-----[X]                 |          ---          +-----[M]
+|                                 |       |                 |        /     \\        |       |
+|                                 | INDEX |                 |       |  HIT  | <---- | MOTIF |
+|                                 |       |                 |        \\     /        |       |
+|                                 +-------+                 |          ---          +-------+
+|                                                           |
++-----------------------------------------------------------+
+
+
+Input files:
+
+[I] SRA ID (i.e. SRR292383 )
+[S] SRA file (i.e. SRR292383.sra)
+[F] Fastq file (paired-end reads should be given separated with \":\", like: FQ1:FQ2)
+[A] Alignment file (BAM format)
+[D] DAT file (first ouput of the MARIO pipeline containing raw allelic counts)
+
+Priority of input files:
+  If multiple input files are privided (e.g.: SRA_ID, FASTQ and BAM files),
+  the pipeline starts with the file with the highest priority.
+  Priority:
+  I<S<F<A<D (the DAT file has the highest priority)
+
+(G) Genotyping file with heterozygous positions
+    (required to generate DAT files)
+(X) Index files for corresponding aligner
+    (required to align reads to genome)
+    (STAR index files for RNA-seq and BOWTIE2 index files for any other
+    experiment type)
+(P) Parameter file
+(M) File with a list of motifs (PWMs)
+    (optional)
+
+# Optional parameters:
+
+[f] Download SRA file and exit
+[a] Generate FASTQ files and exit
+[d] Generate BAM file and exit
+
+Priority of switches:
+  Priority:
+  d<a<f
+  If -f is called, the pipeline generates FASTQ files and exits, even if
+  the -a or -d options are concurrently given
+
+(B) Peaks file in BED format (optional)
+(O) Name of output folder
+(c) Do not call peaks
+(b) Do not require het-SNPs to fall within peaks
+(p) Number of threads (default: use all available threads)
+(q) Do not perform quality control on FASTQ files
+(r) Keep duplicate reads
+(s) Input data is RNA-seq
+
+
+Output files:
+
+(ASB) Allele-specific behavior at each heterozygous positions, including
+      reproducibility score (ARS) and annotations
+(HIT) If motif files are given, the ASB file is further annotated with motif
+      hits on each heterozygous position\n\n";
+	exit;
+}
+
+sub print_parameter_file
+{
+	my $version = shift;
+
+	my $text =
+"#-------------------------------------------------------------------------------
+# Files
+#-------------------------------------------------------------------------------
+
+# Genotype files in:
+# /home/mario/Databases/genotyping_data/hetSNPs
+# Bowtie2 index files:
+# /home/mario/Databases/Hsap/aligner_indices/BOWTIE2
+# STAR index files (hets not masked):
+# /home/mario/Databases/Hsap/aligner_indices/STAR/hg19
+# Motif files (for ChIP-seq experiments):
+# /home/mario/Databases/matrices/cisbp_matrices/motif_lists
+
+#P## Human genome FASTA file
+#P#REFGEN_FILE  = /home/mario/Databases/Hsap/hg19/hg19.fa
+#P## Zebrafish genome FASTA file (cluster)
+#P##REFGEN_FILE  = /home/mario/Databases/danRer10/danRer10.fa
+#C## Human genome FASTA file (cluster)
+#C#REFGEN_FILE  = /data/weirauchlab/databank/genomes/hg19/hg19.fa
+#C## Zebrafish genome FASTA file (cluster)
+#C##REFGEN_FILE  = /data/weirauchlab/databank/genomes/danRer10/danRer10.fa
+
+# ARS file (contains values necessary for ASB scoring)
+ARS_FILE     = ARS_table.txt
+
+#P## BED file containing disease-associated SNPs information
+#P#DISANNO_FILE = /home/mario/Documents/CCHMC_postdoc/Projects/Allele_specific_variants/SDataB_VariantsUsedForEachPhenotype.bed
+#C## BED file containing disease-associated SNPs information (cluster)
+#C#DISANNO_FILE = /data/weirauchlab/databank/apps/MARIO/SDataB_VariantsUsedForEachPhenotype.bed
+
+#P## BED file containing regions used for gene annotations
+#P#GENANNO_FILE = /home/mario/Databases/Hsap/hg19/hg19_exons_anno.bed
+#C## BED file containing regions used for gene annotations (cluster)
+#C#GENANNO_FILE = /data/weirauchlab/databank/apps/MARIO/hg19_exons_anno.bed
+
+#-------------------------------------------------------------------------------
+# Parameters
+#-------------------------------------------------------------------------------
+
+# Chromosomes to consider (comma-separated list)
+# Comment out the desired \'CHROMOSOMES\' line
+# Human
+CHROMOSOMES = chr1,chr2,chr3,chr4,chr5,chr6,chr7,chr8,chr9,chr10,chr11,chr12,chr13,chr14,chr15,chr16,chr17,chr18,chr19,chr20,chr21,chr22,chrX,chrY
+# Mouse
+#CHROMOSOMES = chr1,chr2,chr3,chr4,chr5,chr6,chr7,chr8,chr9,chr10,chr11,chr12,chr13,chr14,chr15,chr16,chr17,chr18,chr19,chrX,chrY
+# Zebrafish
+#CHROMOSOMES = chr1,chr2,chr3,chr4,chr5,chr6,chr7,chr8,chr9,chr10,chr11,chr12,chr13,chr14,chr15,chr16,chr17,chr18,chr19,chr20,chr21,chr22,chr23,chr24,chr25
+
+# ASB parameters:
+S_READS_CF  = 5     # Minimum number of reads (strong reads) to filter out ASB results
+W_READS_CF  = 30    # Minimum number of reads (weak reads) to filter out ASB results when no genotyping information is available
+
+# Motif searching parameters:
+SNP_PADD    = 20    # Number of base pairs to consider at each side of a SNP for motif searching
+                    # Twice this value should encompass the whole length of virtually any motif
+MOODS_PVAL  = 0.01  # P-value cutoff for the program MOODS (recommended: 0.01)
+MIN_SCORE   = 0.5   # Minimum normalized motif match score to report (it applies to the strong allele)
+PEAK_EXT    = 50    # Number of base pairs to extend called peaks on both sides
+                    # MACS2 calls peaks using medium height or something similar, therefore this ensures that peak tails are included
+
+
+#-------------------------------------------------------------------------------
+# Switches for saving files (0 = off; 1 = on)
+#-------------------------------------------------------------------------------
+
+SAVE_SRA   = 0  # Save SRA files
+SAVE_FASTQ = 0  # Save FASTQ files
+SAVE_BAM   = 0  # Save alignment files (BAM format)
+SAVE_BED   = 1  # Save peak files (BED format)
+SAVE_DAT   = 1  # Save MARIO's raw output files (DAT format)
+
+
+#-------------------------------------------------------------------------------
+# External programs (include path here if the program is not in the system's path)
+#-------------------------------------------------------------------------------
+
+FASTQC        = fastqc
+#P#FASTQDUMP  = fastq-dump
+#C#FASTQDUMP  = /data/weirauchlab/team/puj6ug/bin/fastq-dump  # Cluster
+BOWTIE2    = bowtie2
+STAR       = STAR
+SAMTOOLS   = samtools
+BEDTOOLS   = bedtools
+#P#PICARD     = picard-tools MarkDuplicates
+#C#PICARD     = java -Xmx6g -jar /usr/local/picard/1.89/jar/MarkDuplicates.jar  # Cluster
+MACS2      = macs2
+MOODS      = moods\n";
+
+	my @lines = split( "\n", $text );
+	open( CLUS, ">parameters_$version\_cluster.txt" ) or
+		die "ERROR: Could not write parameters' file\n";
+	open( PERS, ">parameters_$version.txt" ) or
+		die "ERROR: Could not write parameters' file\n";
+
+	for my $line ( @lines ){
+
+		if( $line =~ /^#C#/ ){
+			$line =~ s/^#C#//;
+			print CLUS "$line\n";
+		}
+		elsif( $line =~ /^#P#/ ){
+			$line =~ s/^#P#//;
+			print PERS "$line\n";
+		}
+		else{
+			print CLUS "$line\n";
+			print PERS "$line\n";
+		}
+	}
+
+	exit;
+}
+
+sub print_ars_file
+{
+	open( OUT, ">ARS_table.txt" ) or
+		die "ERROR: Could not write ARS file\n";
+
+	print OUT "EXP	WS_RATIO	A	B
+1	0.00	-0.84	0.15
+1	0.10	-0.83	0.15
+1	0.20	-0.81	0.15
+1	0.30	-0.79	0.15
+1	0.40	-0.73	0.15
+1	0.50	-0.65	0.15
+1	0.60	-0.55	0.15
+1	0.70	-0.44	0.15
+1	0.80	-0.36	0.15
+1	0.90	-0.30	0.15
+1	1.00	-0.26	0.15
+2	0.00	-0.90	0.50
+2	0.10	-0.89	0.50
+2	0.20	-0.87	0.50
+2	0.30	-0.84	0.50
+2	0.40	-0.80	0.45
+2	0.50	-0.75	0.40
+2	0.60	-0.64	0.35
+2	0.70	-0.52	0.35
+2	0.80	-0.40	0.40
+2	0.90	-0.33	0.45
+2	1.00	-0.30	0.50
+3	0.00	-0.98	1.25
+3	0.10	-0.97	1.25
+3	0.20	-0.94	1.25
+3	0.30	-0.91	1.25
+3	0.40	-0.86	1.25
+3	0.50	-0.79	1.25
+3	0.60	-0.69	1.25
+3	0.70	-0.56	1.25
+3	0.80	-0.45	1.25
+3	0.90	-0.38	1.25
+3	1.00	-0.36	1.25\n";
+	exit;
+}
+
+1;
+
+#-------------------------------------------------------------------------------
+package FILE;
+use warnings;
+use strict;
+
+sub new
+{
+	my $class     = shift;
+	my %arguments = @_;
+	my $file      = $arguments{'file'} or
+		die "ERROR: Please provide an argument for 'file'\n";
+	my $outDir    = $arguments{'outDir'} or
+		die "ERROR: Please provide an argument for 'outDir'\n";
+
+	my $self =
+	{
+		file       => $file,
+		directory  => undef,
+		base       => undef,
+		extension  => undef,
+		fileHandle => undef,
+		outDir     => $outDir,
+	};
+	bless( $self, $class );
+
+	$self->_parse_file_name;
+
+	return $self;
+}
+
+sub file_exists
+{
+	my $self = shift;
+	my $file = $self->{'file'};
+
+	return 1 if -s $file;
+	return 0;
+}
+
+sub get_file
+{
+	my $self = shift;
+	return $self->{'file'};
+}
+
+sub get_directory
+{
+	my $self = shift;
+	return $self->{'directory'};
+}
+
+sub get_name
+{
+	my $self = shift;
+	my $base = $self->{'base'};
+	my $ext  = $self->{'extension'};
+
+	return "$base.$ext";
+}
+
+sub get_base
+{
+	my $self = shift;
+	return $self->{'base'};
+}
+
+sub get_extension
+{
+	my $self = shift;
+	return $self->{'extension'};
+}
+
+sub get_outDir
+{
+	my $self = shift;
+	return $self->{'outDir'};
+}
+
+sub _parse_file_name
+{
+	my $self = shift;
+	my $file = $self->{'file'};
+
+	# Retrieve file name with full path
+	$file    = `readlink -f $file`;
+	chomp $file;
+
+	# Extract full path, base name and extension
+	$file    =~ /^(.*)\/(.+)\.(\w+)$/;
+	my $dir  = $1;
+	my $base = $2;
+	my $ext  = $3;
+
+	$self->{'directory'} = $dir;
+	$self->{'base'}      = $base;
+	$self->{'extension'} = $ext;
+
+	return 1;
+}
+
+# Make a copy of the file to outDir and
+# changes all attributes to point to this file
+sub make_copy
+{
+	my $self   = shift;
+	my $outDir = $self->get_outDir;
+	my $file   = $self->get_file;
+	my $name   = $self->get_name;
+
+	`cp -f "$file" "$outDir/$name"`;
+
+	$self->{'file'} = "$outDir/$name";
+	$self->_parse_file_name;
+
+	return 1;
+}
+
+sub set_file
+{
+	my $self = shift;
+	my $file = shift;
+
+	$self->{'file'} = $file;
+	$self->_parse_file_name;
+
+	return 1;
+}
+
+sub Open
+{
+	my $self = shift;
+	my $file = $self->{'file'};
+
+	open( my $FH, $file ) or
+		die "ERROR: Could not open file $file\n";
+	$self->{'fileHandle'} = $FH;
+
+	return $FH;
+}
+
+sub Write
+{
+	my $self = shift;
+	my $file = $self->{'file'};
+
+	open( my $FH, ">$file" ) or
+		die "ERROR: Could not open file $file\n";
+	$self->{'fileHandle'} = $FH;
+
+	return $FH;
+}
+
+sub Close
+{
+	my $self = shift;
+	my $FH   = $self->{'fileHandle'};
+	close $FH;
+
+	return 1;
+}
+
+1;
+
+#-------------------------------------------------------------------------------
+package PARAMETERS;
+use warnings;
+use strict;
+
+sub new
+{
+	my $class     = shift;
+	my %arguments = @_;
+	my $options   = $arguments{'options'};
+    my $outDir    = $arguments{'outDir'};
+
+	die "ERROR: Please provide a file for option \"-P\"\n"
+		unless( $options->{'P'} and -s $options->{'P'} );
+
+	my $self = {
+		parameters => undef, # {param_name} = value
+	};
+	bless( $self, $class );
+
+#	print STDERR "Reading in parameters\n";
+	# Extract parameters from parameters' file
+	$self->_param_from_file( $options->{'P'} );
+
+	# Get input with the highest priority
+	$self->_param_from_args( $options );
+
+	# Check for availability of files and programs
+	$self->_check_files_exist;
+	print STDERR "\e[0;32m[ DONE ]\e[0m\n";
+
+	return $self;
+}
+
+sub set_value
+{
+	my $self       = shift;
+	my $par_name   = shift;
+	my $par_value  = shift;
+	my $parameters = $self->{'parameters'};
+
+	$parameters->{$par_name} = $par_value;
+
+	return 1;
+}
+
+sub get_value
+{
+	my $self       = shift;
+	my $par_name   = shift;
+	my $parameters = $self->{'parameters'};
+
+	if( defined $parameters->{$par_name} ){
+		return $parameters->{$par_name};
+	}
+	else{
+		return 0;
+	}
+}
+
+sub _param_from_file
+{
+	my $self     = shift;
+	my $par_file = shift;
+
+	open( IN, $par_file ) or
+		die "ERROR: Could not open parameters file\n";
+	my %parameters;
+
+	while( my $line = <IN> ){
+		chomp $line;
+		next if $line =~ /^\s*$/;
+		next if $line =~ /^\s*#/;
+
+		my $par = $line;
+		my $val = $line;
+		$par    =~ s/\s*=.*$//;
+		$val    =~ s/^.*=\s*//;
+		$val    =~ s/\s*#.*$//;
+
+		if( $par and defined $val ){
+			$val =~ s/\/+$//;
+
+			if( $par eq 'CHROMOSOMES' ){
+				my @chrom = split( ',', $val );
+				$val      = \@chrom;
+			}
+			$parameters{$par} = $val;
+		}
+		else{
+			print STDERR "WARNING: Failed retrieving parameter:\n  $line\n";
+		}
+	}
+	close IN;
+	$self->{'parameters'} = \%parameters;
+
+	return 1;
+}
+
+sub _param_from_args
+{
+	my $self    = shift;
+	my $options = shift;
+	my %ignore;
+
+	# options: 'I:S:1:2:A:D'
+	my $input_file = 'Z';
+	if( $options->{'D'} ){
+		$input_file = 'D';
+		$ignore{'I'} = 1;
+		$ignore{'S'} = 1;
+		$ignore{'F'} = 1;
+		$ignore{'A'} = 1;
+	}
+	elsif( $options->{'A'} ){
+		$input_file = 'A';
+		$ignore{'I'} = 1;
+		$ignore{'S'} = 1;
+		$ignore{'F'} = 1;
+	}
+	elsif( $options->{'F'} ){
+		$input_file = 'F';
+		$ignore{'I'} = 1;
+		$ignore{'S'} = 1;
+	}
+	elsif( $options->{'S'} ){
+		$input_file = 'S';
+		$ignore{'I'} = 1;
+	}
+	elsif( $options->{'I'} ){
+		$input_file = 'I';
+	}
+
+	# Options: f,a,d
+	my $kill_switch = 'zz';
+	if( $options->{'f'} ){
+		$kill_switch = 'f';
+		die "ERROR: Please provide options \"-I\"\n"
+			unless $input_file =~ /I/;
+		$ignore{'a'} = 1;
+		$ignore{'d'} = 1;
+	}
+	elsif( $options->{'a'} ){
+		$kill_switch = 'a';
+		die "ERROR: Please provide options \"-I\" or \"-S\"\n"
+			unless $input_file =~ /[IS]/;
+		$ignore{'d'} = 1;
+	}
+	elsif( $options->{'d'} ){
+		$kill_switch = 'd';
+		die "ERROR: Please provide options \"-I\", \"-S\" or \"-F\"\n"
+			unless $input_file =~ /[ISF]/;
+	}
+
+	# Check required additional files
+	unless( $options->{'g'} ){
+		_require( $options, 'G' )
+			if( $input_file =~ /[ISFAD]/ and $kill_switch !~ /[fad]/ );
+	}
+
+	if( $input_file =~ /[ISFA]/ and $kill_switch !~ /[fa]/ ){
+		_require( $options, 'X' );
+
+		if( $options->{'s'} ){
+			my $sFiles = `ls $options->{'X'}/SAindex 2> /dev/null | wc -l`;
+			chomp $sFiles;
+			die "ERROR: Could not find STAR index files\n"
+				unless $sFiles;
+		}
+		else{
+			my $b_files = `ls $options->{'X'}*.bt2 2> /dev/null | wc -l`;
+			chomp $b_files;
+			die "ERROR: Could not find BOWTIE2 index files\n"
+				unless $b_files;
+		}
+		$self->{'parameters'}{'X'} = $options->{'X'};
+	}
+	$self->{'parameters'}{'itype'} = $input_file;
+
+	_require( $options, 'B' ) if $options->{'B'};
+	_require( $options, 'M' ) if $options->{'M'};
+
+	for my $opt ( keys %$options ){
+		unless( $ignore{$opt} ){
+			$self->{'parameters'}{$opt} = $options->{$opt};
+		}
+	}
+	# Available processors
+	my $proc = `nproc`; chomp $proc;
+	$self->{'parameters'}{'p'} = $options->{'p'} || $proc;
+
+	return 1;
+}
+
+sub _require
+{
+	my $options = shift;
+	my $value   = shift;
+
+	# Check option is provided
+	die "ERROR: Option \"-$value\" not provided\n"
+		unless $options->{$value};
+}
+
+sub _check_files_exist
+{
+	my $self = shift;
+	my @files_to_check =
+	(
+		'REFGEN_FILE',
+		'ARS_FILE',
+		'DISANNO_FILE',
+		'GENANNO_FILE',
+	);
+	my @progs_to_check =
+	(
+		'FASTQC',
+		'FASTQDUMP',
+		'STAR',
+		'BOWTIE2',
+		'SAMTOOLS',
+		'BEDTOOLS',
+		'PICARD',
+		'MACS2',
+		'MOODS',
+	);
+
+	for my $code ( @files_to_check )
+	{
+		my $file   = $self->get_value( $code );
+		my $status = `ls $file* 2> /dev/stdout`;
+
+		if( $status =~ /No such file or directory/ )
+		{
+			die "ERROR: File not found: $file\n";
+		}
+		else
+		{
+			print STDERR "  $code: File present\n";
+		}
+	}
+
+	for my $code ( @progs_to_check )
+	{
+		my $file   = $self->get_value( $code );
+		my $status = `ls $file* 2> /dev/stdout`;
+
+		if( $status =~ /command not found/ )
+		{
+			die "ERROR: Command not found: $file\n";
+		}
+		else
+		{
+			print STDERR "  $code: Command present\n";
+		}
+	}
+
+	my $proc = $self->get_value( 'p' );
+	print STDERR "  Set to use $proc threads\n";
+
+	my $dups = $self->get_value( 'r' );
+	print STDERR "  Duplicate reads will be retained\n"
+		if $dups;
+
+	return 1;
+}
+
+1;
+
+#-------------------------------------------------------------------------------
+package SRA;
+use base 'FILE';
+use warnings;
+use strict;
+
+sub new
+{
+	my $class      = shift;
+	my %arguments  = @_;
+	my $sra_id     = $arguments{'sra_id'}     or
+		die "ERROR: Please provide an argument for 'srr_id'\n";
+    my $outDir     = $arguments{'outDir'}    or
+		die "ERROR: Please provide an argument for 'outDir'\n";
+    my $Parameters = $arguments{'parameters'} or
+		die "ERROR: Please provide an argument for 'parameters'\n";
+
+	my $sraFile   = "$outDir/$sra_id.sra";
+
+	# Constructor
+	my $self = SUPER::new $class
+	(
+	 	file   => $sraFile,
+		outDir => $outDir,
+	);
+	$self->{'sra_id'}     = $sra_id; # srr_id
+	$self->{'parameters'} = $Parameters;
+	bless( $self, $class );
+
+	return $self;
+}
+
+sub destroy
+{
+	my $self = shift;
+	my $file = $self->{'file'};
+
+	print STDERR "  Removing SRA files\n";
+	`rm -f "$file"`;
+
+	return 1;
+}
+
+sub get_srr_id
+{
+	my $self = shift;
+	return $self->{'srr_id'};
+}
+
+sub download
+{
+	my $self       = shift;
+	my $sraFile    = $self->get_file;
+	my $outDir     = $self->get_outDir;
+	my $srr        = $self->{'sra_id'};
+	my $parameters = $self->{'parameters'};
+
+	print STDERR "  Downloading ...\n";
+	my $time0   = time;
+
+	# Download SRA file if incomplete or does not exist
+	my $srr3    = substr( $srr, 0, 3 );
+	my $srr6    = substr( $srr, 0, 6 );
+	my $ftpSite = "ftp://ftp-trace.ncbi.nlm.nih.gov/sra/sra-instant/reads/ByRun/sra/$srr3/$srr6/$srr/$srr.sra";
+	`wget -t 10 -P $outDir -c $ftpSite > /dev/null 2>&1`;
+
+	unless( -s $sraFile )
+	{
+		print STDERR "    Failed to download!\n";
+		return 0;
+	}
+
+	my $time1   = time;
+	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
+	print STDERR "  Time elapsed: $elapsed min\n";
+
+	return 1;
+}
+
+1;
+
+#-------------------------------------------------------------------------------
+package FASTQ;
+use base 'FILE';
+use warnings;
+use strict;
+
+sub new
+{
+	my $class      = shift;
+	my %arguments  = @_;
+    my $outDir     = $arguments{'outDir'} or
+		die "ERROR: Please provide an argument for 'outDir'\n";
+    my $Parameters = $arguments{'parameters'} or
+		die "ERROR: Please provide an argument for 'parameters'\n";
+
+	# Constructor
+	my $self = SUPER::new $class
+	(
+		file   => 'unavailable',
+		outDir => $outDir,
+	);
+	$self->{'parameters'} = $Parameters;
+	$self->{'file1'}      = undef;
+	$self->{'file2'}      = undef;
+	bless( $self, $class );
+
+	return $self;
+}
+
+sub destroy
+{
+	my $self  = shift;
+	my $file1 = $self->get_file1;
+	my $file2 = $self->get_file2;
+
+	print STDERR "  Removing FASTQ files\n";
+
+	`rm -f $file1`;
+	`rm -f $file2` if $file2;
+
+	return 1;
+}
+
+sub get_file1
+{
+	my $self = shift;
+	return $self->{'file1'} || 0;
+}
+
+sub get_file2
+{
+	my $self = shift;
+	return $self->{'file2'} || 0;
+}
+
+sub set_file1
+{
+	my $self = shift;
+	my $file = shift;
+	$self->{'file1'} = $file;
+
+	return 1;
+}
+
+sub set_file2
+{
+	my $self = shift;
+	my $file = shift;
+	$self->{'file2'} = $file;
+
+	return 1;
+}
+
+sub quality_control
+{
+	my $self   = shift;
+	my $fastqc = $Parameters->get_value('FASTQC');
+	my $outDir = $self->{'outDir'};
+	print STDERR "  Performing quality control ...\n";
+	my $time0  = time;
+
+	my $fastq1 = $self->{'file1'};
+	my $base   = $fastq1;
+	$base      =~ s/^.*\///;
+	$base      =~ s/(.*).f(ast)*q(.gz)*/$1/;
+	my $base2  = $base;
+	$base2     =~ s/\.*$//;
+	$base      =~ s/(.*)_read[12]/$1/;
+	$base      =~ s/(.*)_[12]/$1/;
+	my $qcLog  = "$outDir/$base\_fastqc.log";
+
+	my $qcDir  = "$outDir/fastqc";
+	`mkdir -p $qcDir`;
+	print STDERR "  > $fastq1\n";
+	`fastqc --extract -o $qcDir -f fastq $fastq1 2> /dev/null`;
+	my $num = `ls $qcDir/$base2*_fastqc/summary.txt | wc -l 2> /dev/null`;
+
+	unless( $num ){
+		print STDERR "    Failed QC!\n";
+		return 0;
+	}
+	my $qcOut1 = `cut -f1,2 $qcDir/$base2*_fastqc/summary.txt 2> /dev/null | sed 's|^|    |'`;
+	print STDERR "$qcOut1";
+
+	# Save to log file
+	`echo $fastq1 > $qcLog && cat $qcDir/$base2*_fastqc/summary.txt >> $qcLog`;
+
+	if( $self->{'file2'} ){
+		my $fastq2 = $self->{'file2'};
+		my $base   = $fastq2;
+		$base      =~ s/^.*\///;
+		$base      =~ s/(.*).f(ast)*q(.gz)*/$1/;
+		my $base2  = $base;
+		$base2     =~ s/\.*$//;
+		$base      =~ s/(.*)_read[12]/$1/;
+		$base      =~ s/(.*)_[12]/$1/;
+		print STDERR "  > $fastq2\n";
+		`fastqc --extract -o $qcDir -f fastq $fastq2 2> /dev/null`;
+		my $num = `ls $qcDir/$base2*_fastqc/summary.txt | wc -l 2> /dev/null`;
+
+		unless( $num ){
+			print STDERR "    Failed QC on paired reads!\n";
+			return 0;
+		}
+		my $qcOut2 = `cut -f1,2 $qcDir/$base2*_fastqc/summary.txt 2> /dev/null | sed 's|^|    |'`;
+		print STDERR "$qcOut2";
+
+		# Save to log file
+		`echo $fastq2 >> $qcLog && cat $qcDir/$base2*_fastqc/summary.txt >> $qcLog`;
+	}
+	# Remove fastqc directory
+	`rm -rf $qcDir`;
+
+	my $time1   = time;
+	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
+	print STDERR "  Time elapsed: $elapsed min\n";
+
+	return 1;
+}
+
+sub generate
+{
+	my $self       = shift;
+	my $sraFile    = shift;
+	my $outDir     = $self->get_outDir;
+	my $Parameters = $self->{'parameters'};
+	my $fastq_dump = $Parameters->get_value('FASTQDUMP');
+	my $num_files  = 0;
+
+	print STDERR "  Generating with --split-files option ...\n";
+	my $time0   = time;
+
+	my $fastq1  = $sraFile;
+	$fastq1     =~ s/.sra$/_1.fastq/;
+	$fastq1     =~ s/^.*\//$outDir\//;
+	my $fastq2  = $sraFile;
+	$fastq2     =~ s/.sra$/_2.fastq/;
+	$fastq2     =~ s/^.*\//$outDir\//;
+
+	# Get FASTQ files
+	unless( -s $fastq1 ){
+		`$fastq_dump --split-files $sraFile -O $outDir 2> /dev/null`;
+	}
+
+	# Check for validity of FASTQ sequences after splitting
+	my $status1 = check_fastq_file( $fastq1 );
+	die "ERROR: Invalid FASTQ file 1\n"
+		unless $status1;
+	my $status2 = check_fastq_file( $fastq2 );
+
+	if( $status2 == 2 ){
+		`rm -f $fastq1 $fastq2 2> /dev/null`;
+		print STDERR "  Trying again without --split-files option ...\n";
+		# Get FASTQ files
+		`$fastq_dump $sraFile -O $outDir 2> /dev/null`;
+	}
+
+	$num_files = `ls $outDir/*.fastq 2> /dev/null | wc -l`;
+	chomp $num_files;
+
+	if( $num_files == 0 ){
+		die "  Failed generating FASTQ files!\n";
+	}
+	$self->load_files( $fastq1, $fastq2 );
+
+	my $time1   = time;
+	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
+	print STDERR "  Time elapsed: $elapsed min\n";
+
+	return 1;
+}
+
+sub load_files
+{
+	my $self   = shift;
+	my $fastq1 = shift;
+	my $fastq2 = shift;
+	my $outDir = $self->get_outDir;
+
+	$self->{'file1'} = $fastq1;
+
+	if( -s $fastq2 ){
+		$self->{'file2'} = $fastq2;
+	}
+
+	return 1;
+}
+
+sub check_fastq_file
+{
+	my $file   = shift;
+	my $cutoff = 20; # Minimum number of base pairs that would make for a valid sequence
+
+	# Get full path from generated FASTQ files
+	my $fastq  = `readlink -f $file 2> /dev/null`;
+	chomp $fastq;
+
+	if( -s $fastq ){
+		my $base_count = `head -n2 $fastq | tail -n1 | wc -c`;
+		chomp $base_count;
+
+		if( $base_count > $cutoff ){
+			return 1;
+		}
+		else{
+			# FASTQ file exists, but it's not valid. Therefore, should not use --split-files option)
+			return 2;
+		}
+	}
+	else{
+		return 0;
+	}
+}
+
+1;
+
+#-------------------------------------------------------------------------------
+package ALIGNMENT;
+use warnings;
+use strict;
+
+sub new
+{
+	my $class      = shift;
+	my %arguments  = @_;
+    my $bamFile    = $arguments{'bamFile'};
+    my $Fastq      = $arguments{'fastq'};
+    my $outDir     = $arguments{'outDir'}     or
+		die "ERROR: Please provide an argument for 'outDir'\n";
+    my $Parameters = $arguments{'parameters'} or
+		die "ERROR: Please provide an argument for 'parameters'\n";
+	my $chroms     = $Parameters->get_value('CHROMOSOMES');
+	my $fastq1;
+	my $fastq2;
+
+	unless( $chroms ){
+		_get_chroms_from_fa( $Parameters->get_value('REFGEN_FILE'), $Parameters );
+		$chroms = $Parameters->get_value('CHROMOSOMES');
+	}
+	my $base;
+
+	if( $bamFile ){
+		$base = $bamFile;
+		$base =~ s/^.*\///;
+		$base =~ s/.bam$//;
+	}
+	else{
+		$fastq1 = $Fastq->get_file1;
+		$fastq2 = $Fastq->get_file2;
+		$base   = $fastq1;
+		$base   =~ s/^.*\///;
+		$base   =~ s/(.*)_read[12]/$1/;
+		$base   =~ s/(.*).f(ast)*q(.gz)*/$1/;
+		$base   =~ s/(.*)_[12]/$1/;
+	}
+
+	# Get file names by chromosome
+	my %chrFiles;
+
+	for my $chr ( @$chroms ){
+		$chrFiles{$chr} = "$outDir/$chr\_$base.bam";
+	}
+
+	# Constructor
+	my $self = {
+	 	file       => "$outDir/$base.bam",
+	 	file1      => $fastq1,
+	 	file2      => $fastq2,
+		outDir     => $outDir,
+		parameters => $Parameters,
+		chrFiles   => \%chrFiles,
+		readLength => undef,
+	};
+	bless( $self, $class );
+
+	return $self;
+}
+
+sub destroy_file
+{
+	my $self = shift;
+	return 1;
+}
+
+sub destroy_files
+{
+	my $self  = shift;
+	my $files = $self->{'chrFiles'};
+
+	print STDERR "  Removing BAM files split by chromosome\n";
+	my @files = values %$files;
+	`rm -f @files`;
+
+	return 1;
+}
+
+sub get_readLength
+{
+	my $self = shift;
+	return $self->{'readLength'};
+}
+
+sub get_file
+{
+	my $self = shift;
+	return $self->{'file'};
+}
+
+sub get_chr_files
+{
+	my $self = shift;
+	return $self->{'chrFiles'};
+}
+
+sub _get_chroms_from_fa
+{
+	my $fa_file    = shift;
+	my $Parameters = shift;
+	my @chroms     = `grep "^>" $fa_file | grep -oP "chr[\\d\\w]+" | grep -v chrM | sort -Vu`;
+	chomp @chroms;
+	$Parameters->set_value( 'CHROMOSOMES', \@chroms );
+
+	return 1;
+}
+
+sub align_to_genome
+{
+	my $self       = shift;
+	my $fastq1     = $self->{'file1'};
+	my $fastq2     = $self->{'file2'} || 0;
+	my $bamFile    = $self->{'file'};
+	my $base       = $bamFile;
+	$base          =~ s/^.*\///;
+	$base          =~ s/\.bam$//;
+
+	my $Parameters = $self->{'parameters'};
+	my $samtools   = $Parameters->get_value('SAMTOOLS');
+	my $genome     = $Parameters->get_value('REFGEN_FILE');
+	my $outDir     = $Parameters->get_value('O');
+	my $index      = $Parameters->get_value('X');
+	my $rnaseq     = $Parameters->get_value('r');
+	my $proc       = $Parameters->get_value('p');
+
+	my $g_version  = $genome;
+	$g_version     =~ s/^.*\///;
+	$g_version     =~ s/\.fa.*$//;
+
+	my $time0       = time;
+	my $num_aligned = 0;
+	my $total_reads = 0;
+
+	# Detect paired-end or single-end reads
+	my $pe_flag = 0;
+	if( $fastq2 ){
+		$pe_flag = 1;
+		print STDERR "  Aligning paired-end reads to $g_version\n";
+	}
+	else{
+		print STDERR "  Aligning single-end reads to $g_version\n";
+	}
+
+	# Check for gzipped files
+	my $gz_flag = 0;
+	if( $fastq1 =~ /\.gz/ ){
+		print STDERR "    FASTQ files are compressed\n";
+		$gz_flag = 1;
+	}
+
+	# Use STAR with RNA-seq alignment (memory intensive! >32GB)
+	if( $Parameters->get_value('s') ){
+		die "ERROR: Could not find STAR aligner index files\n"
+			unless -s "$index/Genome";
+
+		my $star      = $Parameters->get_value('STAR');
+#		my $modifiers = "--outSAMtype BAM SortedByCoordinate --quantMode GeneCounts --outSAMmultNmax 1 --outMultimapperOrder Random";
+		my $modifiers = "--outSAMtype BAM Unsorted --quantMode GeneCounts --outSAMmultNmax 1 --outMultimapperOrder Random";
+		$modifiers   .= " --readFilesCommand zcat" if $gz_flag;
+	 	my $out_base  = "--outFileNamePrefix $outDir/";
+		my $fastqs    = $fastq1;
+		$fastqs      .= " $fastq2" if $pe_flag;
+
+		# Run STAR aligner
+		`STAR --runThreadN $proc $modifiers $out_base --genomeDir $index --readFilesIn $fastqs 2> /dev/null`;
+		$total_reads  = `grep "Number of input reads"        $outDir/Log.final.out | cut -f2`; chomp $total_reads;
+		$num_aligned  = `grep "Uniquely mapped reads number" $outDir/Log.final.out | cut -f2`; chomp $num_aligned;
+
+		# Rename BAM file
+		`mv -f $outDir/Aligned.out.bam $bamFile 2> /dev/null`;
+
+		# Save relevant STAR output files
+		`mv -f $outDir/Log.final.out $outDir/$base\_star.log 2> /dev/null`;
+		`rm -rf $outDir/*.tab $outDir/_STARtmp $outDir/*.out 2> /dev/null`;
+	}
+	# Align with BOWTIE2
+	else{
+		die "ERROR: Could not find BOWTIE2 aligner index files\n"
+			unless -s "$index.1.bt2";
+
+		# Decompress gz files for BOWTIE2
+		if( $gz_flag ){
+			print STDERR "    Decompressing FASTQ files before BOWTIE2 alignment\n";
+			`gunzip $fastq1 2> /dev/null`;
+			`gunzip $fastq2 2> /dev/null` if $pe_flag;
+			$fastq1 =~ s/.gz$//;
+			$fastq2 =~ s/.gz$// if $pe_flag;
+		}
+		my $bowtie2   = $Parameters->get_value('BOWTIE2');
+		my $log_file  = "$outDir/$base\_bowtie2.log";
+		my $modifiers = "--no-unal";
+		my $fastqs    = "-U $fastq1";
+
+		if( $pe_flag ){
+			$modifiers .= " --no-discordant --no-mixed";
+			$fastqs     = "-1 $fastq1 -2 $fastq2";
+		}
+
+		# Run BOWTIE2 aligner
+		unless( -s $bamFile ){
+			`$bowtie2 -p $proc $modifiers -x $index $fastqs 2> $log_file | $samtools view -bS - > $bamFile 2> /dev/null`;
+			$total_reads = `head -n1 $log_file | sed 's|^ *||' | cut -d' ' -f1`; chomp $total_reads;
+			$num_aligned = `grep -A1 "exactly" $log_file | sed 's|^ *||' | cut -d' ' -f1 | paste -sd+ | bc`; chomp $num_aligned;
+		}
+		else{
+			$total_reads = `head -n1 $log_file | sed 's|^ *||' | cut -d' ' -f1`; chomp $total_reads;
+			$num_aligned = `grep -A1 "exactly" $log_file | sed 's|^ *||' | cut -d' ' -f1 | paste -sd+ | bc`; chomp $num_aligned;
+		}
+
+		# Compress back FASTQ files
+		if( $gz_flag ){
+			print STDERR "    Compressing back FASTQ files\n";
+			`gzip $fastq1 2> /dev/null`;
+			`gzip $fastq2 2> /dev/null` if $pe_flag;
+		}
+	}
+
+	if( $num_aligned ){
+		my $perc_aligned = sprintf( "%.1f", $num_aligned / $total_reads * 100 );
+		print STDERR "    Aligned reads = $num_aligned ($perc_aligned%)\n";
+		$self->{'aligned'} = $num_aligned;
+		$self->{'file'}    = $bamFile;
+	}
+	else{
+		die "ERROR: Failed aligning reads\n";
+	}
+
+	my $time1   = time;
+	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
+	print STDERR "  Time elapsed: $elapsed min\n";
+
+	return 1;
+}
+
+sub _count_aligned_reads
+{
+	my $bamFile    = shift;
+	my $Parameters  = shift;
+	my $samtools    = $Parameters->get_value('SAMTOOLS');
+	my $num_aligned = 0;
+
+	$num_aligned    = `$samtools view $bamFile | wc -l`;
+	chomp $num_aligned;
+
+	return $num_aligned;
+}
+
+sub sort_bam
+{
+	my $self       = shift;
+	my $dupsFlag   = shift;
+	my $bamFile    = $self->{'file'};
+	my $Parameters = $self->{'parameters'};
+	my $samtools   = $Parameters->get_value( 'SAMTOOLS' );
+
+	# Skip this step if already performed
+	return 1 if $dupsFlag;
+
+	print STDERR "  Sorting BAM file ...\n";
+
+	# Check if BAM file is sorted
+	my $out = `$samtools view -H $bamFile | grep -oP "SO:\\w+"`;
+	if( $out !~ /unsorted/ ){
+		print STDERR "    BAM file is sorted\n";
+		return 1;
+	}
+	my $time0   = time;
+
+	`$samtools sort $bamFile $bamFile.sort > /dev/null 2>&1`;
+	print STDERR "    Failed to sort BAM file!\n" unless -s "$bamFile.sort.bam";
+
+	`mv $bamFile.sort.bam $bamFile`;
+
+	unless( $self->{'aligned'} ){
+		my $num_aligned    = _count_aligned_reads( $bamFile, $Parameters );
+		$self->{'aligned'} = $num_aligned;
+	}
+
+	my $time1   = time;
+	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
+	print STDERR "  Time elapsed: $elapsed min\n";
+
+	return 1;
+}
+
+sub index_bam
+{
+	my $self       = shift;
+	my $bamFile    = $self->{'file'};
+	my $Parameters = $self->{'parameters'};
+	my $samtools   = $Parameters->get_value( 'SAMTOOLS' );
+
+	print STDERR "  Indexing BAM file $bamFile\n";
+	my $time0   = time;
+
+	unless( -s "$bamFile.bai" ){
+		# Indexing
+		`$samtools index $bamFile > /dev/null 2>&1`;
+	}
+
+	unless( -s "$bamFile.bai" ){
+		print STDERR "    Failed!\n";
+		return 0;
+	}
+
+	my $time1   = time;
+	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
+	print STDERR "  Time elapsed: $elapsed min\n";
+
+	return 1;
+}
+
+sub remove_duplicates
+{
+	my $self       = shift;
+	my $bamFile    = $self->{'file'};
+	my $readLen    = $self->{'readLength'};
+	my $outDir     = $self->{'outDir'};
+	my $Parameters = $self->{'parameters'};
+	my $samtools   = $Parameters->get_value('SAMTOOLS');
+
+	print STDERR "  Removing duplicate reads ...\n";
+
+	# Check if BAM file is sorted
+	my $out = `$samtools view -H $bamFile | grep -oP "SO:\\w+"`;
+	if( ! $out or $out =~ /unsorted/ ){
+		print STDERR "    Sorting BAM file\n";
+		`$samtools sort $bamFile $bamFile.sorted 2> /dev/null`;
+		`mv -f $bamFile.sorted.bam $bamFile 2> /dev/null`;
+	}
+	my $time0   = time;
+
+	# Remove duplicate reads by chromosome, position and sequence
+	my(
+	 	$reads,
+		$dups,
+		$percDup,
+	) = _remove_duplicate_reads( $bamFile, $Parameters );
+	die "    Failed!\n" unless $reads;
+
+	my $perc    = sprintf( "%u", 100 - $percDup * 100 );
+	my $dReads  = $reads - $dups;
+	print STDERR "    Unique reads returned = $dReads ($perc%)\n";
+	$self->{'aligned_filt'} = $dReads;
+
+	my $time1   = time;
+	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
+	print STDERR "  Time elapsed: $elapsed min\n";
+
+	return 1;
+}
+
+sub _remove_duplicate_reads
+{
+	my $bamFile    = shift;
+	my $Parameters = shift;
+	my $picard     = $Parameters->get_value('PICARD');
+	my $bamBase    = $bamFile;
+	$bamBase       =~ s/\.bam$//;
+
+	`$picard I=$bamFile REMOVE_DUPLICATES=true O=$bamBase\_dedup.bam M=$bamBase\_picard.log 2> /dev/null`;
+	die "    Failed!\n" unless -s "$bamBase\_dedup.bam";
+	`mv -f $bamBase\_dedup.bam $bamFile 2> /dev/null`;
+
+	my $result = `grep -A1 "^LIBRARY" $bamBase\_picard.log | tail -1 | cut -f2,3,5,6,8`;
+	chomp $result;
+
+	# dups: number of single duplicate reads; pDups: number of paired duplicate reads
+	my(
+	 	$reads,
+		$pReads,
+		$dups,
+		$pDups,
+		$percDup,
+	) = split( "\t", $result );
+
+	if( $reads == 0 ){
+		$reads = $pReads;
+		$dups  = $pDups;
+	}
+
+	return(
+	 	$reads,
+		$dups,
+		$percDup,
+	);
+}
+
+sub get_length_of_largest_read
+{
+	my $self       = shift;
+	my $bamFile    = $self->{'file'};
+	my $Parameters = $self->{'parameters'};
+	my $samtools   = $Parameters->get_value('SAMTOOLS');
+
+	# Get length of largest read
+	print STDERR "  Getting largest read length\n";
+
+	my $readLength = `$samtools view $bamFile | head -n100000 | cut -f6 | grep -oP "^\\d+" | sort -nru | head -n1`;
+	chomp $readLength;
+
+	unless( $readLength ){
+		print STDERR "\n    Failed retrieving read length!\n";
+		return 0;
+	}
+	$self->{'readLength'} = $readLength;
+
+	print STDERR "    Read length = $readLength bp\n";
+	return 1;
+}
+
+sub split_bam_by_chr
+{
+	my $self       = shift;
+	my $bamFile    = $self->{'file'};
+	my $outDir     = $self->{'outDir'};
+	my $Parameters = $self->{'parameters'};
+	my $samtools   = $Parameters->get_value('SAMTOOLS');
+	my $chroms     = $Parameters->get_value('CHROMOSOMES');
+	my $base       = $bamFile;
+	$base          =~ s/^.*\///;
+	$base          =~ s/\.bam$//;
+	my %chrFiles;
+
+	print STDERR "  Split BAM file by chromosomes ...\n";
+	my $time0      = time;
+
+	# Indexing
+	print STDERR "    Indexing BAM file\n";
+	`$samtools index $bamFile > /dev/null 2>&1`;
+
+	# Check if BAM file is sorted
+	my $out = `$samtools view -H $bamFile | grep -oP "SO:\\w+"`;
+
+	if( $out =~ /unsorted/ ){
+		print STDERR "    Sorting BAM file\n";
+		`$samtools sort $bamFile $bamFile.sorted 2> /dev/null`;
+		`mv -f $bamFile.sorted.bam $bamFile 2> /dev/null`;
+	}
+
+	for my $chr ( @$chroms ){
+		my $chrBamFile = "$outDir/$chr\_$base.bam";
+
+		# Split BAM file
+		`$samtools view $bamFile $chr -b > $chrBamFile 2> /dev/null`
+			unless -s $chrBamFile;
+
+		# Count number of reads in this chromosome
+		my $num_reads = _count_aligned_reads( $chrBamFile, $Parameters );
+		my $answer    = "    No reads aligned to $chr\n";
+
+		if( $num_reads ){
+			$answer = "    Number of reads in $chr = $num_reads\n";
+			$chrFiles{$chr} = $chrBamFile;
+		}
+		else{
+			`rm -f $chrBamFile`;
+		}
+		print STDERR $answer;
+	}
+
+	if( keys %chrFiles ){
+		my $time1   = time;
+		my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
+		print STDERR "  Time elapsed: $elapsed min\n";
+		$self->{'chrFiles'} = \%chrFiles;
+
+		return 1;
+	}
+	else{
+		print STDERR "  Failed splitting BAM file!\n";
+		return 0;
+	}
+}
+
+sub _get_chroms_from_bam
+{
+	my $bamFile   = shift;
+	my $Parameters = shift;
+	my $samtools   = $Parameters->get_value('SAMTOOLS');
+	my @chroms     = `$samtools view -H $bamFile | grep "^\@SQ" | grep -v chrM | cut -f2 | cut -d: -f2`;
+	chomp @chroms;
+	$Parameters->set_value( 'CHROMOSOMES', \@chroms );
+
+	return 1;
+}
+
+1;
+
+#-------------------------------------------------------------------------------
+package PEAKS;
+use base 'FILE';
+use warnings;
+use strict;
+
+sub new
+{
+	my $class      = shift;
+	my %arguments  = @_;
+    my $bamFile   = $arguments{'bamFile'} or
+		die "ERROR: Please provide an argument for 'bamFile'\n";
+    my $outDir     = $arguments{'outDir'} or
+		die "ERROR: Please provide an argument for 'outDir'\n";
+    my $Parameters = $arguments{'parameters'} or
+		die "ERROR: Please provide an argument for 'parameters'\n";
+	my $chroms     = $Parameters->get_value('CHROMOSOMES');
+
+	my $base       = $bamFile;
+	$base          =~ s/^.*\///;
+	$base          =~ s/.bam$//;
+	my $peakFile  = "$outDir/$base.bed";
+
+	my %chrFiles;
+
+	for my $chr ( @$chroms ){
+		$chrFiles{$chr} = "$outDir/$chr\_$base.bed";
+	}
+
+	# Constructor
+	my $self = SUPER::new $class(
+	 	file   => $peakFile,
+		outDir => $outDir,
+	);
+	$self->{'parameters'} = $Parameters;
+	$self->{'chrFiles'}  = \%chrFiles;
+	$self->{'bamFile'}   = $bamFile;
+	bless( $self, $class );
+
+	return $self;
+}
+
+sub destroy_file
+{
+	my $self = shift;
+	my $file = $self->{'file'};
+
+	print STDERR "  Removing PEAK file\n";
+	`rm -f $file`;
+
+	return 1;
+}
+
+sub destroy_files
+{
+	my $self  = shift;
+	my $files = $self->{'chrFiles'};
+
+	print STDERR "  Removing PEAK files split by chromosome\n";
+	my @files = values %$files;
+	`rm -f @files`;
+
+	return 1;
+}
+
+sub get_chr_files
+{
+	my $self = shift;
+	return $self->{'chrFiles'};
+}
+
+sub call_peaks
+{
+	my $self       = shift;
+	my $bamFile    = $self->{'bamFile'};
+	my $peakFile   = $self->get_file;
+	my $peak_base  = $self->get_base;
+	my $outDir     = $self->get_outDir;
+
+	my $Parameters = $self->{'parameters'};
+	my $chroms     = $Parameters->get_value('CHROMOSOMES');
+	my $proc       = $Parameters->get_value('p');
+	my $macs2      = $Parameters->get_value('MACS2');
+	my $extend     = $Parameters->get_value('PEAK_EXT');
+
+	print STDERR "  Calling peaks ...\n";
+	my $time0 = time;
+
+	# Call peaks only on nodup BAM file using MACS2
+	unless( -s $peakFile ){
+		`$macs2 callpeak -t $bamFile -f BAM -g hs -n $outDir/$peak_base -B -q 0.01 2>/dev/null`;
+
+		my $np_file = "$outDir/$peak_base\_peaks.narrowPeak";
+
+		# MACS2 unable to build peak model due to few reads in the BAM file
+		# Run alternative, --nomodel, calculation
+		unless( -s $np_file ){
+			`$macs2 callpeak --nomodel --extsize 147 -t $bamFile -f BAM -g hs -n $outDir/$peak_base -B -q 0.01 2>/dev/null`;
+		}
+
+		# Rename peakFile
+		if( -s $np_file ){
+			`mv -f $np_file $peakFile`;
+			`rm -f $outDir/$peak_base*.bdg $outDir/$peak_base\_model.r $outDir/$peak_base\_peaks.xls $outDir/$peak_base\_summits.bed`;
+		}
+		else{
+			# Total failure of peak caller MACS2
+			print STDERR "    Failed to call peaks!\n";
+			return 0;
+		}
+
+		# Modify a few things in the BED file and delete unused files
+		# Eliminate path in BED file so it takes less space in disk
+		`sed -i 's|$outDir/$peak_base\_||' $peakFile`;
+
+		# Extend peaks by $extend bp on both sides
+		`awk '{print \$1,\$2-$extend,\$3+$extend,\$4,\$5+$extend}' OFS='\\t' $peakFile > $peakFile.tmp`;
+		`mv $peakFile.tmp $peakFile`;
+	}
+
+	# Report number of peaks (if any)
+	my $num_peaks = _get_number_of_peaks( $peakFile );
+	my $answer    = "    No peaks found!\n";
+	$answer       = "    Total number of peaks = $num_peaks\n" if $num_peaks;
+	print STDERR $answer;
+
+	my $time1   = time;
+	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
+	print STDERR "  Time elapsed: $elapsed min\n";
+
+	return $num_peaks;
+}
+
+sub split_peaks_by_chr
+{
+	my $self       = shift;
+	my $peakFile  = $self->get_file;
+	my $peak_base  = $self->get_base;
+	my $outDir     = $self->get_outDir;
+	my $Parameters = $self->{'parameters'};
+	my $chroms     = $Parameters->get_value('CHROMOSOMES');
+	my %chrFiles;
+
+	print STDERR "  Splitting peak file by chromosomes ...\n";
+	my $time0 = time;
+
+	unless( -s $peakFile ){
+		print STDERR "    No peak file found!\n";
+		return 0;
+	}
+
+	# Split PEAK file by chromosomes
+	for my $chr ( @$chroms ){
+		my $chrPeakFile = "$outDir/$chr\_$peak_base.bed";
+
+		`grep -P "^$chr\\t" $peakFile > $chrPeakFile`;
+
+		my $num_peaks = _get_number_of_peaks( $chrPeakFile );
+		my $answer    = "    No peaks found for $chr\n";
+
+		if( $num_peaks ){
+			$answer = "    Number of peaks in $chr = $num_peaks\n";
+			$chrFiles{$chr} = $chrPeakFile;
+		}
+		else{
+			`rm -f $chrPeakFile`;
+		}
+		print STDERR $answer;
+	}
+
+	my $time1   = time;
+	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
+	print STDERR "  Time elapsed = $elapsed min\n";
+
+	if( keys %chrFiles ){
+		$self->{'chrFiles'} = \%chrFiles;
+		return 1;
+	}
+	else{
+		print STDERR "    No chromosome peak files were found!\n";
+		return 0;
+	}
+}
+
+sub _get_number_of_peaks
+{
+	my $peakFile = shift;
+	my $num_peaks = 0;
+
+	if( -s $peakFile ){
+		$num_peaks = `cat $peakFile | wc -l`;
+		chomp $num_peaks;
+	}
+
+	return $num_peaks;
+}
+
+sub count_reads_under_peak
+{
+	my $self       = shift;
+	my $bamFiles   = shift;
+	my $peakFile   = $self->get_file;
+	my $peakFiles  = $self->get_chr_files;
+	my $peakBase   = $self->get_base;
+	my $outDir     = $self->get_outDir;
+
+	my $Parameters = $self->{'parameters'};
+	my $samtools   = $Parameters->get_value('SAMTOOLS');
+	my $chroms     = $Parameters->get_value('CHROMOSOMES');
+	my $proc       = $Parameters->get_value('p');
+
+	print STDERR "  Counting reads under called peaks ...\n";
+	my $time0      = time;
+
+	my $pm = new Parallel::ForkManager( $proc );
+
+	for my $chr ( @$chroms ){
+		$pm->start and next;
+
+		if( $peakFiles->{$chr} ){
+			my $chrPeakFile  = $peakFiles->{$chr};
+			my $chrBamFile   = $bamFiles->{$chr};
+			my $chrCountFile = "$chrPeakFile.count";
+
+			open( PEAK, "$chrPeakFile" ) or
+				die "ERROR: Could not open file $chrPeakFile";
+			open( BAM, "$samtools view $chrBamFile |" ) or
+				die "ERROR: Could not open file $chrBamFile\n";
+			open( OUT, ">$chrCountFile" ) or
+				die "ERROR: Could not open file $chrCountFile\n";
+
+			while( my $peak_line = <PEAK> ){
+				chomp $peak_line;
+				my(
+					$p_chr,
+					$p_start,
+					$p_end,
+					$p_id,
+					$p_summit,
+				) = split( "\t", $peak_line );
+				$p_summit = ( $p_end - $p_start ) / 2 + $p_start;
+				my $read_count;
+				my $state = 0;
+
+				do{
+					my $bam_line = <BAM>;
+
+					if( $bam_line ){
+						chomp $bam_line;
+						# SRR873824.24745869  0   chr22   16051210
+						my @split   = split( "\t", $bam_line );
+
+						# Filter by CIGAR line (exclude rare alignments)
+						my $cigar   = $split[5];
+						next unless $cigar =~ /^(\d+[MSHIND])+$/;
+
+						my $r_chr   = $split[2];
+						my $r_start = $split[3];
+						my $r_seq   = $split[9];
+						my $r_len   = length $r_seq;
+						my $r_end   = $r_start + $r_len - 1;
+
+						if( $r_end >= $p_start ){
+							if( $r_end >= $p_start and $r_start <= $p_end ){
+								$read_count++;
+							}
+							else{
+								my @p_data = (
+									$p_chr,
+									$p_start,
+									$p_end,
+									$p_id,
+									$p_summit,
+								);
+
+								# CHR PEAK_START PEAK_END PEAK_ID PEAK_SUMMIT READ_COUNT
+								if( $read_count ){
+									print OUT join( "\t", @p_data ), "\t$read_count\n";
+								}
+
+								# Last peak considered if there is no more reads in the BAM file
+								last if eof BAM;
+
+								# Done with this peak, go to the next
+								next;
+							}
+						}
+					}
+					else{
+						$state = 1;
+					}
+				}
+				until( $state == 1 );
+			}
+			close BAM;
+			close PEAK;
+			close OUT;
+
+			# Rename the modified file
+			if( -s $chrCountFile ){
+				`mv $chrCountFile $chrPeakFile`;
+			}
+			else{
+				print STDERR "    Peak file for chromosome $chr not generated!\n";
+			}
+		}
+		$pm->finish;
+	}
+	$pm->wait_all_children;
+	my %chrFiles;
+
+	# Count number of peaks in generated files
+	for my $chr ( @$chroms ){
+
+		if( -s $peakFiles->{$chr} ){
+			my $chrPeakFile = $peakFiles->{$chr};
+			my $rCount      = `cut -f6 $chrPeakFile | wc -l`; chomp $rCount;
+
+			if( $rCount ){
+				print STDERR "    Number of counted peaks in $chr = $rCount\n";
+				$chrFiles{$chr} = $chrPeakFile;
+			}
+			else{
+				print STDERR "    No counted peaks in $chr\n";
+			}
+		}
+	}
+
+	unless( keys %chrFiles ){
+		print STDERR "    Failed!\n";
+		return 0;
+	}
+	$self->{'chrFiles'} = \%chrFiles;
+
+	# Concatenate and sort BED files
+	`cat $outDir/chr*_$peakBase.bed | cut -f1-6 | sort -Vk1,1 -k2,2g > $peakFile`;
+
+	# Report on the total number of reads in all peaks
+	my $totalCount = `cut -f6 $peakFile | paste -sd+ | bc`;
+	chomp $totalCount;
+	print STDERR "    Total number of reads in peaks = $totalCount\n";
+
+	my $time1   = time;
+	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
+	print STDERR "  Time elapsed: $elapsed min\n";
+
+	return 1;
+}
+
+1;
+
+#-------------------------------------------------------------------------------
+package GENOTYPING;
+use base 'FILE';
+use warnings;
+use strict;
+
+sub new
+{
+	my $class      = shift;
+	my %arguments  = @_;
+    my $outDir     = $arguments{'outDir'}    or
+		die "ERROR: Please provide an argument for 'outDir'\n";
+	my $Parameters = $arguments{'parameters'} or
+		die "ERROR: Please provide an argument for 'parameters'\n";
+	my $chroms     = $Parameters->get_value('CHROMOSOMES');
+	my $gen_path   = $Parameters->get_value('GENOT_PATH');
+
+	# Constructor
+	my $self = SUPER::new $class
+	(
+	 	file   => "noFile",
+		outDir => $outDir,
+	);
+	$self->{'parameters'} = $Parameters;
+	$self->{'chrFiles'}   = undef;
+	$self->{'filtered'}   = undef;
+	bless( $self, $class );
+
+	return $self;
+}
+
+sub destroy_file
+{
+	my $self = shift;
+	my $file = $self->get_file;
+
+	print STDERR "  Removing GENOTYPE file\n";
+	`rm -f $file`;
+
+	return 1;
+}
+
+sub destroy_files
+{
+	my $self  = shift;
+	my $files = $self->{'chrFiles'};
+
+	print STDERR "  Removing temporary GENOTYPE files\n";
+	my @files = values %$files;
+	`rm -f @files`;
+
+	return 1;
+}
+
+sub get_chr_files
+{
+	my $self = shift;
+	return $self->{'chrFiles'} || 0;
+}
+
+sub get_filtered_files
+{
+	my $self = shift;
+	return $self->{'filtered'};
+}
+
+sub load_file
+{
+	my $self       = shift;
+	my $genFile    = shift;
+	my $Parameters = $self->{'parameters'};
+
+	print STDERR "  Extracting GENOTYPE information ...\n";
+	my $time0      = time;
+
+	die "    Genotyping file not present or empty\n    $genFile\n"
+		unless -s $genFile;
+
+	my $num_hets   = `cat $genFile | wc -l`;
+	chomp $num_hets;
+
+	if( $num_hets ){
+		print STDERR "    Number of het-SNPs = $num_hets\n";
+	}
+	else{
+		die "    Failed retrieving het-SNPs\n";
+	}
+	$self->set_file( $genFile );
+
+	my $time1   = time;
+	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
+	print STDERR "  Time elapsed: $elapsed min\n";
+
+	return 1;
+}
+
+sub generate_file
+{
+	my $self    = shift;
+	my $bedFile = shift;
+	open( IN, $bedFile ) or
+		die "ERROR: Could not open BED file $bedFile\n";
+	my $tmpFile = $bedFile;
+	$tmpFile    =~ s/.bed$/_tmp.gen/;
+	open( OUT, ">$tmpFile" ) or
+		die "ERROR: Could not create BED file $tmpFile\n";
+
+	while( my $line = <IN> ){
+		my( $chr, $pStart, $pEnd ) = split( "\t", $line );
+
+		for( my $p = $pStart; $p <= $pEnd; $p++ ){
+			print OUT "$chr\t$p\t$p\t1\n";
+		}
+	}
+	close IN;
+	close OUT;
+
+	# Make sure all positions are unique
+	`sort -u $tmpFile | sort -Vk1,1 -k2,2n > $tmpFile.tmp && mv $tmpFile.tmp $tmpFile`;
+
+	return $tmpFile;
+}
+
+sub split_gen_by_chr
+{
+	my $self       = shift;
+	my $genFile    = $self->get_file;
+	my $genBase    = $self->get_base;
+	my $outDir     = $self->get_outDir;
+	my $Parameters = $self->{'parameters'};
+	my $chroms     = $Parameters->get_value('CHROMOSOMES');
+	my %chrFiles;
+
+	print STDERR "  Splitting GENOTYPE file into chromosomes ...\n";
+	my $time0  = time;
+
+	for my $chr ( @$chroms ){
+		my $chrGenFile = "$outDir/$chr\_$genBase.gen";
+		`grep -P "^$chr\t" $genFile > $chrGenFile`;
+		my $numHets    = `cat $chrGenFile | wc -l`;
+		chomp $numHets;
+
+		if( $numHets ){
+			print STDERR "    Number of heterozygous positions in $chr = $numHets\n";
+			$chrFiles{$chr} = $chrGenFile;
+		}
+		else{
+			print STDERR "    No heterozygous positions in $chr\n";
+			`rm -f $chrGenFile`;
+		}
+	}
+
+	unless( keys %chrFiles ){
+		print STDERR "    Failed splitting genotyping file!\n";
+		return 0;
+	}
+	$self->{'chrFiles'} = \%chrFiles;
+
+	my $time1   = time;
+	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
+	print STDERR "  Time elapsed: $elapsed min\n";
+
+	return 1;
+}
+
+sub _get_chroms_from_gen
+{
+	my $genFile   = shift;
+	my $Parameters = shift;
+	my @chroms     = `cut -f1 $genFile | sort -Vu`;
+	chomp @chroms;
+	$Parameters->set_value( 'CHROMOSOMES', \@chroms );
+
+	return 1;
+}
+
+sub filter
+{
+	my $self       = shift;
+	my $bedFile    = shift;
+	my $genFile    = $self->get_file;
+	my $outDir     = $self->get_outDir;
+
+	my $Parameters = $self->{'parameters'};
+	my $chroms     = $Parameters->get_value('CHROMOSOMES');
+	my $bedtools   = $Parameters->get_value('BEDTOOLS');
+
+	my $base  = $bedFile;
+	$base     =~ s/^.*\///;
+	$base     =~ s/.bed$//;
+	my $time0 = time;
+
+	print STDERR "  Filtering GENOTYPE file ...\n";
+
+	# Find SNPs within peaks
+	my $tmpGen = "$outDir/filtered.gen";
+	`$bedtools intersect -a $genFile -b $bedFile -wo | cut -f1-4 > $tmpGen`;
+	$self->set_file( $tmpGen );
+
+	my $numGen = `cat $tmpGen | wc -l`; chomp $numGen;
+	if( $numGen ){
+		print STDERR "    Heterozygous positions within peaks = $numGen\n";
+	}
+	else{
+		print STDERR "    No heterozygous positions within called peaks\n";
+		return 0;
+	}
+
+	my $time1   = time;
+	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
+	print STDERR "  Time elapsed: $elapsed min\n";
+
+	return 1;
+}
+
+sub mask_genome
+{
+	my $self       = shift;
+	my $genFile    = $self->get_file;
+	my $outDir     = $self->get_outDir;
+
+	my $Parameters = $self->{'parameters'};
+	my $bedtools   = $Parameters->get_value('BEDTOOLS');
+	my $star       = $Parameters->get_value('ALIGNER');
+	my $padding    = $Parameters->get_value('PEAK_PADD');
+	my $proc       = $Parameters->get_value('p');
+	my $rep_file   = $Parameters->get_value('REPEATS_FILE');
+	my $idx_path   = $Parameters->get_value('IDX_PATH');
+	my $exp_cell   = $Parameters->get_value('C');
+	print STDERR "Masking genome at heterozygous positions\n";
+	my $time0      = time;
+
+	my $index_files = `ls $idx_path*.bt2 2> /dev/null | wc -l`;
+	chomp $index_files;
+
+	if( $index_files ){
+		print STDERR "  Index files exist\n";
+	}
+	else{
+		print STDERR "  Masking genome ...\n";
+		print STDERR "    Prepare regions to mask\n";
+
+		my $genome    = $Parameters->get_value('REFGEN_FILE');
+		my $g_version = $genome;
+		$g_version    =~ s/^.*\///;
+		$g_version    =~ s/\.fa.*$//;
+
+		# Make BED file from het_SNP positions
+		`awk \'{print \$1,\$2,\$2}\' OFS=\'\\t\' $genFile > $outDir/het1.txt`;
+
+		# Merge regions
+		`$bedtools merge -i $outDir/het1.txt > $outDir/tmp1.txt`;
+
+		print STDERR "    Masking\n";
+		# Mask genome
+		`$bedtools maskfasta -fi $genome -bed $outDir/tmp1.txt -fo $outDir/mygenome.fa`;
+
+		print STDERR "    Building indeces\n";
+		# Creating star index files
+#		`$star-build $outDir/mygenome.fa $outDir/$g_version\_$exp_cell\_altN > /dev/null 2>&1`;
+#		`mv -f $outDir/$g_version\_$exp_cell\_altN*.bt2 $idx_path/ 2> /dev/null`;
+		`$star-build $outDir/mygenome.fa $outDir/$g_version > /dev/null 2>&1`;
+		`mv -f $outDir/$g_version.*.bt2 $idx_path/ 2> /dev/null`;
+
+#		my $index_files = `ls $idx_path/$g_version\_$exp_cell\_altN*.bt2 2> /dev/null | wc -l`;
+		my $index_files = `ls $idx_path/$g_version.*.bt2 2> /dev/null | wc -l`;
+		chomp $index_files;
+
+		unless( $index_files ){
+			print STDERR "    Failed!\n";
+			return 0;
+		}
+	}
+	my $time1   = time;
+	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
+	print STDERR "  Time elapsed: $elapsed min\n";
+	print STDERR "\e[0;32m[ DONE ]\e[0m\n";
+
+	return 1;
+}
+
+#-------------------------------------------------------------------------------
+package ASB;
+use base 'FILE';
+use warnings;
+use strict;
+
+sub new
+{
+	my $class      = shift;
+	my %arguments  = @_;
+    my $asbFile    = $arguments{'file'};
+    my $outDir     = $arguments{'outDir'}    or
+		die "ERROR: Please provide an argument for 'outDir'\n";
+    my $Parameters = $arguments{'parameters'} or
+		die "ERROR: Please provide an argument for 'parameters'\n";
+
+	# Constructor
+	my $self = SUPER::new $class(
+	 	file   => $asbFile,
+		outDir => $outDir,
+	);
+	$self->{'parameters'} = $Parameters;
+	bless( $self, $class );
+
+	return $self;
+}
+
+sub destroy_files
+{
+	my $self    = shift;
+	my $datFile = $self->{'datFile'};
+	my $aliFile = $self->{'aliFile'};
+
+	 print STDERR "  Removing DAT and ALI files split by chromosome\n";
+	`rm -f $datFile $aliFile`;
+
+	return 1;
+}
+
+sub get_datFile
+{
+	my $self = shift;
+	return $self->{'datFile'} || 0;
+}
+
+sub get_aliFile
+{
+	my $self = shift;
+	return $self->{'aliFile'} || 0;
+}
+
+sub find_allelic_behavior
+{
+	my $self       = shift;
+	my $Alignment  = shift;
+	my $genFiles   = shift;
+	my $datFile    = $self->get_file;
+	my $datBase    = $self->get_base;
+	my $outDir     = $self->get_outDir;
+	my $bamFiles   = $Alignment->get_chr_files;
+
+	my $Parameters = $self->{'parameters'};
+	my $proc       = $Parameters->get_value('p');
+	my $samtools   = $Parameters->get_value('SAMTOOLS');
+	my $chroms     = $Parameters->get_value('CHROMOSOMES');
+	my $sReadsCf   = $Parameters->get_value('S_READS_CF');
+	my $wReadsCf   = $Parameters->get_value('W_READS_CF');
+
+	my @header = (
+		'CHR',
+		'START',
+		'END',
+		'S_BASE',
+		'W_BASE',
+		'S_READS',
+		'W_READS',
+		'WS_RATIO',
+		'SNP_STATUS',
+	);
+
+	print STDERR "  Finding ASBs ...\n";
+	my $time0 = time;
+
+	# Find ASBs
+	my $pm = new Parallel::ForkManager( $proc );
+
+	for my $chr ( @$chroms ){
+		$pm->start and next;
+		my $adbNum = 0;
+
+		my $chrBamFile = $bamFiles->{$chr};
+		open( BAM, "$samtools view $chrBamFile |" ) or
+			die "ERROR: Could not open BAM file $chrBamFile\n";
+		my $chr_datFile = "$outDir/$chr\_$datBase.dat";
+		open( DAT, ">$chr_datFile" ) or
+			die "ERROR: Could not create file $chr_datFile\n";
+
+		# Load genotyping information
+		my %genotype;
+		if( defined $genFiles ){
+			die "ERROR: Missing genotyping information for chromosome $chr\n"
+				unless $genFiles->{$chr};
+
+			my $g_file = $genFiles->{$chr};
+			open( GEN, $g_file ) or
+				die "ERROR: Could not open genotype file: $g_file\n";
+
+			while( my $line = <GEN> ){
+				chomp $line;
+				my( $chr, $start, $end, $val ) = split( "\t", $line );
+				my $imp = 'g';
+				$imp    = 'i' if $val;
+				$genotype{$start} = $imp;
+			}
+		}
+
+		# Print header
+		print DAT join( "\t", @header ), "\n";
+
+=pod
+		# BAM line column infomation
+		0 SEQ_ID    SRR873824.24745869
+		1 CODE      0
+		2 CHR       chr22
+		3 POS       16051210
+		4 -
+		5 CIGAR     36M
+		6 -
+		7 -
+		8 -
+		9 SEQUENCE  GTAAAATACTTTCATTTTCCTTCAGAGTCTGCTGTC
+=cut
+
+		# Process First BAM line
+		my $bam_line    = <BAM>;
+		my @bam         = split( "\t", $bam_line );
+		my $start       = $bam[3];
+		my @sorted_pos  = sort{ $a <=> $b } keys %genotype;
+		my %pileups;
+
+		while( my $gpos = shift @sorted_pos ){
+			do{
+				if( $gpos < $start ){
+					# Write out results
+					if( %pileups ){
+						my $b_pileups = $pileups{$gpos};
+						my @sorted    = sort{ $b_pileups->{$b} <=> $b_pileups->{$a} } keys %$b_pileups;
+						my $s_base    = shift @sorted;
+						my $sReads   = $b_pileups->{$s_base};
+
+						if( $sReads >= $sReadsCf ){
+							my $w_base   = shift @sorted         || 'N';
+							my $wReads  = $b_pileups->{$w_base} ||  0;
+							my $imp      = $genotype{$gpos};
+
+							my $ws_ratio = $wReads / $sReads;
+							print DAT "$chr\t$gpos\t$gpos\t$s_base\t$w_base\t$sReads\t$wReads\t$ws_ratio\t$imp\n";
+						}
+						undef %pileups;
+					}
+					next;
+				}
+				else{
+					# Filter by CIGAR line (exclude rare alignments)
+					if( $bam[5] =~ /^(\d+[MSHINDP])+$/ ){
+						# Correct alternate sequence according to the CIGAR line
+						my( $cseq, $clen ) = _correct_sequence( \@bam );
+						my $end = $start + $clen - 1;
+
+						if( $gpos <= $end ){
+							# Get pileup
+							my $base = substr( $cseq, $gpos - $start, 1 );
+							$pileups{$gpos}{$base}++;
+						}
+					}
+					# Process next BAM line
+					$bam_line = <BAM>;
+					@bam      = split( "\t", $bam_line );
+					$start    = $bam[3];
+				}
+			}
+			until( eof BAM );
+
+			last if eof BAM;
+		}
+		close BAM;
+		close DAT;
+
+		# Remove chr BAM files (no longer used)
+		`rm -f $chrBamFile 2> /dev/null`;
+
+		$adbNum = `cat $chr_datFile | wc -l`;
+		chomp $adbNum;
+		$adbNum--; # Do not count the header
+		print STDERR "    Positions with ASB found for $chr = $adbNum\n";
+
+		$pm->finish;
+	}
+	$pm->wait_all_children;
+
+	# Print header on DAT file
+	`head -n1 $outDir/chr*_$datBase.dat | grep -m1 "^CHR" > $datFile`;
+
+	# Print body on DAT file
+	`cat $outDir/chr*_$datBase.dat | grep -v "^CHR" | sort -Vk1,1 -k2,2n >> $datFile`;
+
+	# Count total allelic binders there are in the DAT file
+	my $numAllelic = `tail -n +2 $datFile | wc -l`;
+	chomp $numAllelic;
+
+	if( $numAllelic ){
+		print STDERR "    Total allelic binders = $numAllelic\n";
+	}
+	else{
+		print STDERR "    No allelic binders found!\n";
+		`rm -f $datFile`;
+		return 0;
+	}
+
+	my $time1   = time;
+	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
+	print STDERR "  Time elapsed: $elapsed min\n";
+
+	return 1;
+}
+
+sub _write_results
+{
+	my $DAT      = shift;
+	my $pileups  = shift;
+	my $gen_pos  = shift;
+	my $srCutoff = shift;
+	my $wrCutoff = shift;
+
+	for my $chr ( keys %$pileups ){
+		my $pileups_pos = $pileups->{$chr};
+
+		for my $pos ( keys %$pileups_pos ){
+			my $pileups_base = $pileups_pos->{$pos};
+			my @sorted       = sort{ $pileups_base->{$b} <=> $pileups_base->{$a} } keys %$pileups_base;
+
+			if( $gen_pos and $gen_pos->{$pos} ){
+				# Genotyping information is used
+				# Therefore, positions are filtered by genotype
+				my $s_base   = shift @sorted;
+				my $sReads  = $pileups_base->{$s_base};
+				next if $sReads < $srCutoff;
+
+				my $w_base   = shift @sorted || 'N';
+				my $wReads  = $pileups_base->{$w_base} || 0;
+				my $imp      = $gen_pos->{$pos};
+
+				my $ws_ratio = $wReads / $sReads;
+				print $DAT "$chr\t$pos\t$pos\t$s_base\t$w_base\t$sReads\t$wReads\t$ws_ratio\t$imp\n";
+			}
+=pod
+			else{
+				# No genotyping information
+				# All positions are reported, except those with $wReads < $wrCutoff
+				next if keys %$pileups_base < 2; # 2 or more bases found (only interested in allelic behavior)
+
+				my $s_base   = shift @sorted;
+				my $sReads  = $pileups_base->{$s_base};
+				my $w_base   = shift @sorted;
+				my $wReads  = $pileups_base->{$w_base};
+				my $imp      = 'p';
+				next if "$s_base$w_base" =~ /-/; # No indels
+				next if $wReads < $wrCutoff;
+
+				my $ws_ratio = $wReads / $sReads;
+				print $DAT "$chr\t$pos\t$s_base\t$w_base\t$sReads\t$wReads\t$ws_ratio\t$imp\n";
+			}
+=cut
+		}
+	}
+
+	return 1;
+}
+
+sub _correct_sequence
+{
+=pod
+	# BAM line column infomation
+	0 SEQ_ID    SRR873824.24745869
+	1 CODE      0
+	2 CHR       chr22
+	3 POS       16051210
+	4 -
+	5 CIGAR     36M
+	6 -
+	7 -
+	8 -
+	9 SEQUENCE  GTAAAATACTTTCATTTTCCTTCAGAGTCTGCTGTC
+=cut
+	my $bam   = shift;
+	my $cigar = '' . $bam->[5];
+	my $len   = length $bam->[9];
+	my @num   = $cigar =~ /\d+/g;
+	my @let   = $cigar =~ /\D/g;
+	my $seq   = $bam->[9];
+
+	# Relative position
+	my $p = 0;
+	my $clen;
+
+	for( my $i = 0; $i < scalar @let; $i++ ){
+		my $letter = $let[$i];
+		my $number = $num[$i];
+
+		if( $letter eq 'M' ){
+			$p    += $number;
+			$clen += $number;
+		}
+		elsif( $letter =~ /[SI]/ ){
+			# Remove from sequence
+			substr( $seq, $p, $number, '' );
+		}
+		elsif( $letter =~ /[NPD]/ ){
+			# Insert '-'s
+			my $m = '-' x $number;
+			substr( $seq, $p, 0, $m );
+			$p += $number;
+		}
+	}
+
+	return( $seq, $clen );
+}
+
+1;
+
+#-------------------------------------------------------------------------------
+package ARS;
+use base 'FILE';
+use warnings;
+use strict;
+
+sub new
+{
+	my $class      = shift;
+	my %arguments  = @_;
+	my $arsFile    = $arguments{'file'}       or
+		die "ERROR: Please provide an argument for 'file'\n";
+    my $outDir     = $arguments{'outDir'}    or
+		die "ERROR: Please provide an argument for 'outDir'\n";
+    my $Parameters = $arguments{'parameters'} or
+		die "ERROR: Please provide an argument for 'parameters'\n";
+
+	# Constructor
+	my $self = SUPER::new $class(
+	 	file   => $arsFile,
+		outDir => $outDir,
+	);
+	$self->{'ar_scores'} = undef;
+	bless( $self, $class );
+
+	# Load FDR data
+	$self->_load_ar_scores( $Parameters );
+
+	return $self;
+}
+
+sub get_ars_data
+{
+	my $self = shift;
+	return $self->{'ar_scores'};
+}
+
+sub _load_ar_scores
+{
+	my $self       = shift;
+	my $Parameters = shift;
+	my $arsFile    = $self->get_file;
+	my $IN         = $self->Open;
+
+	# Remove header
+	my $header = <$IN>;
+	my %ars_data;
+
+	while( my $line = <$IN> ){
+		chomp $line;
+		my(
+		 	$exp,
+		 	$ratio,
+			$A,
+			$B,
+		) = split( "\t", $line );
+
+		$ars_data{$exp}{$ratio} = [$A, $B];
+	}
+	$self->Close;
+	$self->{'ar_scores'} = \%ars_data;
+
+	return 1;
+}
+
+sub get_ars_score
+{
+	my $self  = shift;
+	my $exp   = shift;
+	my $ratio = shift;
+	my $reads = shift;
+	my $data  = $self->{'ar_scores'};
+	my $step  = 0.1;
+	my $ars;
+
+	for( my $ratio0 = 0; $ratio0 <= 1; $ratio0 += $step ){
+		my $ratio1 = sprintf( "%.2f", $ratio0 + $step );
+		$ratio0    = sprintf( "%.2f", $ratio0 );
+
+		if( $ratio >= $ratio0 && $ratio <= $ratio1 ){
+			my $A0 = $data->{$exp}{$ratio0}[0];
+			my $B0 = $data->{$exp}{$ratio0}[1];
+
+			if( $ratio == $ratio0 ){
+				$ars   = sprintf( "%.3f", $A0 / ( 1 + $B0 * $reads ) - $A0 );
+			}
+			elsif( $ratio == $ratio1 ){
+				my $A1 = $data->{$exp}{$ratio1}[0];
+				my $B1 = $data->{$exp}{$ratio1}[1];
+
+				$ars   = sprintf( "%.3f", $A1 / ( 1 + $B1 * $reads ) - $A1 );
+			}
+			else{
+				my $A1    = $data->{$exp}{$ratio1}[0];
+				my $B1    = $data->{$exp}{$ratio1}[1];
+
+				# Interpolate A and B values
+				my $range = $ratio1 - $ratio0;
+				my $diff  = $ratio  - $ratio0;
+				my $A     = $A0 + ( $A1 - $A0 ) / $range * $diff;
+				my $B     = $B0 + ( $B1 - $B0 ) / $range * $diff;
+
+				# Apply logistic function with obtained parameters to get ARS
+				$ars      = sprintf( "%.3f", $A / ( 1 + $B * $reads ) - $A );
+			}
+		}
+	}
+
+	return $ars;
+}
+
+1;
+
+#-------------------------------------------------------------------------------
+package STATISTICS;
+use strict;
+use warnings;
+use POSIX qw(floor ceil);
+
+sub new
+{
+	my $class     = shift;
+	my %arguments = @_;
+	my $data      = $arguments{'data'} or
+		die "ERROR: Please provide an argument for 'data'\n";
+
+	my $self = {
+	 	data => $data,
+		min  => undef,
+		max  => undef,
+	};
+	bless( $self, $class );
+
+	return $self;
+}
+
+sub min
+{
+	my $self = shift;
+	my $data = $self->{'data'};
+	
+	if( $self->{'min'} ){
+		return $self->{'min'};
+	}
+	else{
+		my( $min, $max ) = _min_and_max( $data );
+		$self->{'min'}   = $min;
+		$self->{'max'}   = $max;
+		return $min;
+	}
+}
+
+sub max
+{
+	my $self = shift;
+	my $data = $self->{'data'};
+	
+	if( $self->{'max'} ){
+		return $self->{'max'};
+	}
+	else{
+		my( $min, $max ) = _min_and_max( $data );
+		$self->{'min'}   = $min;
+		$self->{'max'}   = $max;
+		return $max;
+	}
+}
+
+## Calculates arithmetic mean given an array of numbers
+#  Takes array reference
+sub arithmetic_mean
+{
+	my $self = shift;
+	my $data = $self->{'data'};
+	my $mean = _mean( $data );
+	return $mean;
+}
+
+# Minimum and maximum values
+sub _min_and_max
+{
+	my $data = shift;
+
+	# Sort values in ascending order
+	my @sorted = sort{ $a <=> $b } @$data;
+	my $min    = $sorted[0];
+	my $max    = $sorted[-1];
+
+	return( $min, $max );
+}
+
+sub _mean
+{
+	my $data = shift;
+	my $n    = scalar @$data;
+	my $sum  = 0;
+
+	for my $value ( @$data ){
+		$sum += $value;
+	}
+	return $sum / $n;
+}
+
+## Calculates standard deviation given an array of numbers and their mean
+#  Takes array reference and mean
+sub standard_deviation
+{
+	my $self = shift;
+	my $data = $self->{'data'};
+	my $mean = 0;
+
+	if( $self->{'mean'} ){
+		$mean = $self->{'mean'};
+	}
+	else{
+		$mean = _mean( $data );
+	}
+
+	my $n   = scalar @$data;
+	my $sum = 0;
+
+	for my $value ( @$data ){
+		my $sqdiff = ( $value - $mean ) ** 2;
+		$sum    += $sqdiff;
+	}
+
+	my $stdev = sqrt( $sum / ( $n - 1 ) );
+
+	return $stdev;
+}
+
+1;
+
+#-------------------------------------------------------------------------------
+package MOTIF;
+use base 'FILE';
+use warnings;
+use strict;
+
+
+sub new
+{
+    my $class      = shift;
+    my %arguments  = @_;
+    my $file       = $arguments{'file'};
+    my $outDir     = $arguments{'outDir'};
+    my $Parameters = $arguments{'parameters'} or
+		die "ERROR: Please provide an argument for 'parameters'\n";
+
+	my $self = SUPER::new $class(
+	 	file    => $file,
+		outDir  => $outDir,
+	);
+    $self->{'motif_matrix'}    = undef; # Array of arrays defining the binding motif matrix
+    $self->{'motif_length'}    = undef;
+    $self->{'canonical_score'} = undef;
+    $self->{'alphabet'}        = ['A','C','G','T'];
+    bless( $self, $class );
+
+	$self->_process_matrix_file;
+    $self->_normalize;
+	$self->_find_canonical_score( $Parameters );
+
+    return $self;
+}
+
+sub get_canonical_score
+{
+	my $self = shift;
+	return $self->{'canonical_score'};
+}
+
+sub _find_canonical_score
+{
+	my $self       = shift;
+	my $Parameters = shift;
+	my $alphabet   = $self->{'alphabet'};
+	my $m_file     = $self->get_file;
+	my $m_base     = $self->get_base;
+	my $matrix     = $self->{'motif_matrix'};
+	my $outDir     = $self->{'outDir'};
+	my $fasta      = "$outDir/$m_base\_canonical.fa";
+
+	# Find canonical sequence
+	my $can_seq;
+
+	for( my $j = 0; $j < scalar @{$matrix->[0]}; $j++ ){
+		my $p_freq = 0;
+		my $c_base; # Canonical base
+
+		for( my $i = 0; $i < scalar @$alphabet; $i++ ){
+			my $base = $alphabet->[$i];
+			my $freq = $matrix->[$i][$j];
+
+			if( $freq > $p_freq ){
+				$c_base  = $base;
+				$p_freq  = $freq;
+			}
+		}
+		$can_seq .= $c_base;
+	}
+	open( OUT, ">$fasta" );
+	print OUT  ">$m_base\n$can_seq\n";
+	close OUT;
+
+	# Find canonical score
+	my $moods   = $Parameters->get_value( 'MOODS' );
+	my $pval_cf = $Parameters->get_value( 'MOODS_PVAL' );
+
+	# Create temporary matrix file without the first column that contains the bases
+	my $cm_file = "$outDir/$m_base\_tmp.mat";
+	`cut -d' ' -f2- "$m_file" > "$cm_file"`;
+
+	# Run MOODS to get canonical score
+	# MOODS produces zero-based positions in its output
+	my $can_score = `$moods -f $pval_cf "$fasta" "$cm_file" 2>&1 | grep -vP \"^(cal|loa|Mat|Hit|Tot|\\n+)\" | awk \'NF\' | grep -P "^0\t" | cut -f2`;
+	chomp $can_score;
+
+	$self->{'canonical_score'} = $can_score;
+
+	return 1;
+}
+
+sub get_motif_length
+{
+    my $self = shift;
+    return $self->{'motif_length'};
+}
+
+sub get_forward_file
+{
+    my $self         = shift;
+    my $motif_matrix = $self->{'motif_matrix'};
+    my $outDir       = $self->{'outDir'};
+    my $file_base    = $self->get_base;
+	my $file_name    = "$outDir/$file_base\_fw.mat";
+
+	my $Matfile = new FILE(
+	 	file   => $file_name,
+		outDir => $outDir,
+	);
+
+    _print_motif_matrix(
+		$motif_matrix,
+		$Matfile,
+	);
+
+    die "ERROR: Failed generating forward motif file $file_name\n" 
+		unless -s "$file_name";
+
+    return $Matfile->get_file;
+}
+
+sub get_reverse_file
+{
+    my $self         = shift;
+    my $motif_matrix = $self->{'motif_matrix'};
+    my $outDir       = $self->{'outDir'};
+    my $file_base    = $self->get_base;
+	my $file_name    = "$outDir/$file_base\_rc.mat";
+
+    $motif_matrix    = _reverse_matrix( $motif_matrix );
+
+	my $Matfile = new FILE(
+	 	file    => $file_name,
+		outDir  => $outDir,
+	);
+
+    _print_motif_matrix(
+		$motif_matrix,
+		$Matfile,
+	);
+
+    die "ERROR: Failed generating reverse motif file $file_name\n" 
+		unless -s "$file_name";
+
+    return $Matfile->get_file;
+}
+
+sub _reverse_matrix
+{
+    my $matrix = shift;
+	my $width  = scalar @$matrix;
+	my @rc_matrix;
+
+    for( my $i = $width - 1; $i >= 0; $i-- ){
+        my @frequencies = reverse @{$matrix->[$i]};
+        push( @rc_matrix, \@frequencies );
+    }
+
+	return \@rc_matrix;
+}
+
+sub _print_motif_matrix
+{
+    my $motif_matrix = shift;
+    my $File         = shift;
+	my $OUT          = $File->Write;
+
+    for( my $i = 0; $i < scalar @$motif_matrix; $i++ ){
+        my $frequencies = $motif_matrix->[$i];
+        print $OUT join( "\t", @$frequencies ), "\n";
+	}
+
+    $File->Close;
+
+    return 1;
+}
+
+sub _process_matrix_file
+{
+    my $self   = shift;
+	my $format = _check_transfac_format( $self->get_file );
+
+	if( $format =~ /^Pos/ ){
+		_transfac_to_jaspar( $self );
+	}
+	my $matrix = _process_jaspar_format( $self );
+
+	die "ERROR: Failed processing matrix file $self->get_file\n" 
+		unless $matrix;
+
+	$self->{'motif_matrix'} = $matrix;
+	$self->{'motif_length'} = scalar @{$matrix->[0]};
+
+	return 1;
+}
+
+sub print_matrix
+{
+	my $self      = shift;
+    my $matrix    = $self->{'motif_matrix'};
+    my $alphabet  = $self->{'alphabet'};
+    my $file_base = $self->get_base;
+
+	print "MATRIX for $file_base\n";
+
+    for( my $i = 0; $i < scalar @$alphabet; $i++ ){
+        my $frequencies = $matrix->[$i];
+        my $base        = $alphabet->[$i];
+
+        print "$base: ", join( ' ', @$frequencies ), "\n";
+    }
+
+    return 1;
+}
+
+sub _process_jaspar_format
+{
+	my $self         = shift;
+	my $alphabet     = $self->{'alphabet'};
+	my @dummy_column = ( 0.23, 0.27, 0.24, 0.26 );
+
+	my $IN = $self->Open;
+    my %tmp_matrix;
+
+    while( my $line = <$IN> ){
+		chomp $line;
+        my( $base, @frequencies ) = split( /\s+|\t+/, $line );
+
+		# Remove anything but the 4 letters ACGT
+        $base =~ s/[^ACGT]//g;
+
+		my $matrix_length  = scalar @frequencies;
+
+		if( $matrix_length < 7 ){
+			my $number_add = 7 - $matrix_length;
+			my $dummy_freq = shift @dummy_column;
+
+			for( my $i = 0; $i < $number_add; $i++ ){
+				push( @frequencies, $dummy_freq );
+			}
+
+			$tmp_matrix{$base} = \@frequencies;
+		}
+		else{
+			$tmp_matrix{$base} = \@frequencies;
+		}
+    }
+
+	$self->Close;
+
+    my @motif_matrix;
+
+    foreach my $base ( @$alphabet ){
+        my $frequencies = $tmp_matrix{$base};
+        push( @motif_matrix, $frequencies );
+    }
+
+    return \@motif_matrix;
+}
+
+sub _check_transfac_format
+{
+	my $file   = shift;
+	my $header = `grep -P \"^Pos\t[ACGT]\" "$file"`;
+	chomp $header;
+
+	return $header;
+}
+
+sub _transfac_to_jaspar
+{
+    my $self     = shift;
+	my $file     = $self->get_file;
+    my @alphabet = ( 'A', 'C', 'G', 'T' );
+
+    my %transfac;
+
+    open( IN, $file ) or die "ERROR: Could not open file $file\n";
+    my @data   = <IN>;
+    close IN;
+
+	my $header = shift @data;
+	chomp $header;
+    my @fields = split( /\s+|\t+/, $header );
+
+    for( my $i = 0; $i < scalar @data; $i++ ){
+        my $line  = $data[$i];
+        chomp $line;
+
+        my @split = split( /\s+|\t+/, $line );
+
+        for( my $f = 0; $f < scalar @split; $f++ ){
+			my $field = $fields[$f];
+			my $value = $split[$f];
+			$value    = sprintf( "%.3f", $value );
+            push( @{$transfac{$field}}, $value );
+        }
+    }
+
+    # Convert to JASPAR format
+    my @jaspar;
+
+    foreach my $base ( @alphabet ){
+        if( $transfac{$base} ){
+            my $line = "$base: " . join( ' ', @{$transfac{$base}} );
+            push( @jaspar, $line );
+        }
+    }
+
+	my $outDir = $self->get_outDir;
+	my $base    = $self->get_base;
+	my $jaspar  = "$outDir/$base.mat";
+	open( OUT, ">$jaspar" ) or
+		die "ERROR: Could not create motif file $jaspar\n";
+    print OUT join( "\n", @jaspar ), "\n";
+	close OUT;
+	$self->set_file( $jaspar );
+
+    return 1;
+}
+
+sub _normalize
+{
+	my $self         = shift;
+	my $motif_matrix = $self->{'motif_matrix'};
+
+	# Get column sums
+	my @col_sums;
+
+	for my $frequencies ( @$motif_matrix ){
+		for( my $i = 0; $i < scalar @$frequencies; $i++ ){
+			my $freq       = $frequencies->[$i];
+			$col_sums[$i] += $freq;
+		}
+	}
+
+	# Normalize frequencies
+	for my $frequencies ( @$motif_matrix ){
+		for( my $i = 0; $i < scalar @$frequencies; $i++ ){
+			$frequencies->[$i] /= $col_sums[$i];
+			$frequencies->[$i]  = sprintf( "%.4f", $frequencies->[$i] );
+		}
+	}
+
+	return 1;
+}
+
+1;
+
+#-------------------------------------------------------------------------------
+package POSTPROCESSING;
+use base 'FILE';
+use warnings;
+use strict;
+
+sub new
+{
+	my $class      = shift;
+	my %arguments  = @_;
+    my $file       = $arguments{'file'}       or
+		die "ERROR: Please provide an argument for 'file'\n";
+    my $outDir     = $arguments{'outDir'}     or
+		die "ERROR: Please provide an argument for 'outDir'\n";
+    my $Parameters = $arguments{'parameters'} or
+		die "ERROR: Please provide an argument for 'parameters'\n";
+	my $hitFile    = $file;
+	$hitFile       =~ s/\.asb$/.hit/;
+
+	# Constructor
+	my $self = SUPER::new $class(
+	 	file   => $file,
+		outDir => $outDir,
+	);
+	$self->{'parameters'} = $Parameters;
+	$self->{'hitFile'}    = $hitFile;
+	bless( $self, $class );
+
+	return $self;
+}
+
+sub get_hitFile
+{
+	my $self = shift;
+	return $self->{'hitFile'};
+}
+
+sub merge_positions
+{
+	my $self  = shift;
+	my $files = shift;
+
+	# Merge ASB data
+	my $iFile = shift @$files;
+	open( ASB1, $iFile ) or
+		die "ERROR: Could not open file $iFile\n";
+
+	print STDERR "  Merging positions ...\n";
+	my $time0 = time;
+
+	# Remove header
+	my $header1 = <ASB1>;
+	chomp $header1;
+	my @data1   = <ASB1>;
+	chomp @data1;
+	close ASB1;
+
+	for my $iFile ( @$files ){
+		open( ASB2, $iFile ) or
+			die "ERROR: Could not open file $iFile\n";
+		# Remove header
+		my $header2 = <ASB2>;
+		my @data2   = <ASB2>;
+		chomp @data2;
+		close ASB2;
+		@data1      = _merge( \@data1, \@data2 );
+	}
+
+	# Write merged data to file
+	my $OUT = $self->Write;
+	print $OUT "$header1\n";
+
+	for my $line ( @data1 ){
+		print $OUT "$line\n";
+	}
+	$self->Close;
+
+	# Sort positions
+	my $mFile = $self->get_file;
+	`sort -Vk1,1 -k2,2n $mFile > $mFile.tmp && mv -f $mFile.tmp $mFile`;
+
+	my $num = scalar @data1;
+
+	if( $num > 1 ){
+		print STDERR "    Total number of ASB positions = $num\n";
+	}
+	else{
+		print STDERR "    Failed to merge ASB positions!\n";
+		return 0;
+	}
+
+	my $time1   = time;
+	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
+	print STDERR "  Time elapsed: $elapsed min\n";
+
+	return 1;
+}
+
+sub _merge
+{
+	my $data1 = shift;
+	my $data2 = shift;
+	my %exist;
+
+	for my $line1 ( @$data1 ){
+		my @split = split( "\t", $line1 );
+		my $chr   = $split[0];
+		my $start = $split[1];
+
+		$exist{"$chr-$start"} = $line1;
+	}
+
+	# Find overlap with data2
+	my @data;
+
+	for my $line2 ( @$data2 ){
+		my @split2 = split( "\t", $line2 );
+		my $chr    = $split2[0];
+		my $start  = $split2[1];
+		my $end    = $split2[2];
+
+		if( $exist{"$chr-$start"} ){
+			my $line1  = $exist{"$chr-$start"};
+			my @split1 = split( "\t", $line1 );
+
+			my @array  = (
+				$chr,                      # CHR
+				$start,                    # START
+				$end,                      # END
+				"$split1[3],$split2[3]",   # S_BASE
+				"$split1[4],$split2[4]",   # W_BASE
+				"$split1[5],$split2[5]",   # S_READS
+				"$split1[6],$split2[6]",   # W_READS
+				"$split1[7],$split2[7]",   # WS_RATIO
+				$split1[8],                # SNP_STATUS (same position always has same genotyping status)
+			);
+			my $line = join( "\t", @array );
+			push( @data, $line );
+			delete $exist{"$chr-$start"};
+		}
+		else{
+			push( @data, $line2 );
+		}
+	}
+
+	# Get remaining lines from data1
+	while( my( $key, $line1 ) = each %exist ){
+		push( @data, $line1 );
+	}
+
+	return @data;
+}
+
+sub add_statistics
+{
+	my $self       = shift;
+	my $procFile   = $self->get_file;
+	my $outDir     = $self->get_outDir;
+	my $Parameters = $self->{'parameters'};
+	my $statsFile  = "$procFile.stats";
+
+	print STDERR "  Adding statistics ...\n";
+	my $time0  = time;
+
+	# Print header
+	my $PROC   = $self->Open;
+	open( OUT, ">$statsFile" );
+	my $header = <$PROC>;
+	chomp $header;
+	my @header = split( "\t", $header );
+	my @hStats = (
+		'S_READS_AVG',
+		'W_READS_AVG',
+		'WS_RATIO_AVG',
+	);
+	my @hOut   = ( @header, @hStats );
+	print OUT join( "\t", @hOut ), "\n";
+	my $num;
+
+	while( my $line = <$PROC> ){
+		chomp $line;
+		my @split = split( "\t", $line );
+		my @stats;
+
+		for my $field ( @split ){
+
+			if( $field =~ /\d,\d/ ){
+				my @data = split( ',', $field );
+				my $Stat = new STATISTICS(
+					data => \@data,
+				);
+				push( @stats, $Stat->arithmetic_mean );
+			}
+		}
+
+		if( @stats ){
+			my @proc = ( @split, @stats );
+			print OUT join( "\t", @proc ), "\n";
+		}
+		else{
+			my @proc = ( @split, $split[5], $split[6], $split[7] );
+			print OUT join( "\t", @proc ), "\n";
+		}
+		$num++;
+	}
+	$self->Close;
+	close OUT;
+
+	if( $num > 1 && -s $statsFile ){
+		print STDERR "    Number of processed lines = $num\n";
+		`mv $statsFile $procFile`;
+	}
+	else{
+		print STDERR "    Failed to calculate statistics!\n";
+		`rm -f $statsFile`;
+		return 0;
+	}
+
+	my $time1   = time;
+	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
+	print STDERR "  Time elapsed: $elapsed min\n";
+
+	return 1;
+}
+
+sub add_ars
+{
+	my $self       = shift;
+	my $ArScores   = shift;
+	my $procFile   = $self->get_file;
+	my $Parameters = $self->{'parameters'};
+	my $procTmp    = "$procFile.tmp";
+
+	print STDERR "  Adding ARS scores ...\n";
+	my $time0      = time;
+
+	# Print header
+	my $PROC   = $self->Open;
+	open( OUT, ">$procTmp" );
+	my $header = <$PROC>;
+	chomp $header;
+	my @header = split( "\t", $header );
+	my @add    = ( 'ARS_GROUP', 'ARS_GLOBAL' );
+	@header    = ( @header, @add );
+	print OUT join( "\t", @header ), "\n";
+	my $num;
+
+	while( my $line = <$PROC> ){
+		# chrX	132450499	132450500	A	N	11	0	0	g
+		chomp $line;
+		my @split     = split( "\t", $line );
+		$num++;
+
+		# Find out if the SNP has concordant s_bases
+		my @bases    = split( ',', $split[3] );
+		my @sReads   = split( ',', $split[5] );
+		my @wReads   = split( ',', $split[6] );
+		my @wsRatios = split( ',', $split[7] );
+		my %sSame;
+		my %sReads;
+		my %wReads;
+		my %wsRatios;
+
+		for( my $i = 0; $i < scalar @bases; $i++ ){
+			my $base   = $bases[$i];
+			my $sReads = $sReads[$i];
+			my $wReads = $wReads[$i];
+			my $ratio  = $wsRatios[$i];
+
+			$sSame{$base}++;
+			push( @{$sReads{$base}},   $sReads );
+			push( @{$wReads{$base}},   $wReads );
+			push( @{$wsRatios{$base}}, $ratio );
+		}
+
+		# Go through each group found
+		my @arsGroup;
+		my $arsHigh = 1; # >= 0.5
+		my $arsLow  = 1; # <  0.5
+		my %arsVote;
+
+		for my $base ( keys %sSame ){
+			my $numExp   = $sSame{$base};
+			my $readsAvg = 0;
+			my $ratioAvg = 0;
+			my $maxSum   = 0;
+
+			# Calculate average reads and ratio within each group
+			for( my $i = 0; $i < scalar @{$sReads{$base}}; $i++ ){
+				my $sum    = $sReads{$base}[$i] + $wReads{$base}[$i];
+				$maxSum    = $sum if $sum > $maxSum;
+
+				$readsAvg += $sReads{$base}[$i];
+				$ratioAvg += $wsRatios{$base}[$i];
+			}
+			$readsAvg /= $numExp;
+			$ratioAvg /= $numExp;
+
+			my $num  = $numExp;
+			$num     = 3 if $num > 3;
+			my $ars  = $ArScores->get_ars_score(
+				$num,
+				$ratioAvg,
+				$readsAvg,
+			);
+			push( @arsGroup, "$numExp$base\_$ars" );
+
+			if( $ars >= 0.5 ){
+				$arsHigh++;
+			}
+			else{
+				$arsLow++;
+			}
+			$arsVote{"$numExp$base"} = [$numExp, $maxSum, $ars];
+		}
+
+		# Get best ars score and filter out if maxSum doesn't cut it
+		my @sorted   = sort{ $arsVote{$b}[0] <=> $arsVote{$a}[0] } keys %arsVote;
+		my $key1     = shift @sorted;
+		my $numExp1 = $arsVote{$key1}[0];
+		my $numExp2 = 0;
+		my $numExps = keys %arsVote;
+
+		for my $key ( @sorted ){
+			$numExp2 += $arsVote{$key}[0];
+		}
+
+		# Report ARS score if cadidate meets criteria or report -1
+		my $maxNum  = $arsVote{$key1}[1];
+		my $arsGlob = -1;
+
+		if( $numExp1 > $numExp2 ){
+			$arsGlob = $arsVote{$key1}[2];
+		}
+		elsif( $arsHigh/$arsLow <= 0.4 ){
+			# Less than 30% of the groups have a high ARS value
+			$arsGlob = $arsVote{$key1}[2];
+		}
+
+		my $arsGroup  = join( ',', @arsGroup );
+		my @addScores = ( $arsGroup, $arsGlob );
+
+		@split = ( @split, $arsGroup, $arsGlob );
+		print OUT join( "\t", @split ), "\n";
+	}
+	$self->Close;
+	close OUT;
+
+	if( $num > 1 && -s $procTmp ){
+		print STDERR "    Number of processed lines = $num\n";
+		`mv $procTmp $procFile`;
+	}
+	else{
+		print STDERR "    Failed to add AR scores!\n";
+		return 0;
+	}
+
+	my $time1   = time;
+	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
+	print STDERR "  Time elapsed: $elapsed min\n";
+
+	return 1;
+}
+
+sub	add_reference_bases
+{
+	my $self       = shift;
+	my $procFile   = $self->get_file;
+	my $outDir     = $self->get_outDir;
+	my $Parameters = $self->{'parameters'};
+	my $genome     = $Parameters->get_value( 'REFGEN_FILE' );
+	my $bedtools   = $Parameters->get_value( 'BEDTOOLS' );
+	my $refFile    = "$procFile.ref";
+
+	print STDERR "  Annotating reference allele ... \n";
+	my $time0      = time;
+
+	# Generate BED file with base coordinates
+	my $bedFile   = "$outDir/reference.bed";
+	`tail -n +2 $procFile | awk '{print \$1,\$2-1,\$2}' OFS='\\t' > $bedFile`;
+
+	# Get genomic bases
+	my @ref_bases  = `$bedtools getfasta -fi $genome -bed $bedFile -tab -fo /dev/stdout | cut -f2 | tr "[:lower:]" "[:upper:]"`;
+	chomp @ref_bases;
+
+	#  Write header
+	my $PROC   = $self->Open;
+	open( OUT, ">$refFile" ) or
+		die "ERROR: Could not open file $refFile!\n";
+	my $header = <$PROC>;
+	chomp $header;
+	my @header = split( "\t", $header );
+	splice( @header, 3, 0, 'REF_BASE' );
+	print OUT join( "\t", @header ), "\n";
+
+	my $num = 0;
+
+	while( my $line = <$PROC> ){
+		chomp $line;
+		my @split    = split( "\t", $line );
+		my $ref_base = $ref_bases[$num];
+		splice( @split, 3, 0, $ref_base );
+
+		print OUT join( "\t", @split ), "\n";
+		$num++;
+	}
+	$self->Close;
+	close OUT;
+
+	if( $num > 0 && -s $refFile ){
+		print STDERR "    Number of processed lines = $num\n";
+		`head -n1 $refFile > $procFile`;
+		`tail -n +2 $refFile | sort -Vk1,1 -k2,2n >> $procFile`;
+		`rm -f $refFile $bedFile`;
+	}
+	else{
+		print STDERR "    Failed to add reference bases!\n";
+		`rm -f $refFile`;
+		return 0;
+	}
+
+	my $time1   = time;
+	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
+	print STDERR "  Time elapsed: $elapsed min\n";
+
+	return 1,
+}
+
+sub find_motif_matches
+{
+	my $self         = shift;
+	my $matrix_files = shift;
+	my $procFile     = $self->get_file;
+	my $outDir       = $self->{'outDir'};
+	my $Parameters   = $self->{'parameters'};
+
+	print STDERR "  Finding motif matches ...\n";
+	my $time0        = time;
+
+	# Load MOTIFS
+	my $motifs  = $self->_load_motifs( $matrix_files );
+	unless( $motifs ){
+		print STDERR "    Failed loading motifs!\n";
+		return 0;
+	}
+
+	# Extract genomic sequences
+	print STDERR "    Extracting REF sequences\n";
+	my $ref_seqs = $self->_extract_ref_sequences;
+	unless( $ref_seqs ){
+		print STDERR "    Failed!\n";
+		return 0;
+	}
+
+	# Print allele sequences to a temporary FASTA file
+	print STDERR "    Building allele sequences\n";
+	my $allele_seqs = $self->_build_allele_sequences( $ref_seqs );
+	unless( $allele_seqs ){
+		print STDERR "    Failed!\n";
+		return 0;
+	}
+
+	# Find MOTIF matches
+	print STDERR "    Finding matches\n";
+	my $matches = $self->_find_matches( $allele_seqs, $motifs );
+	unless( $matches ){
+		print STDERR "    Failed!\n";
+		return 0;
+	}
+
+	# print_results
+	print STDERR "    Writing results\n";
+	my $status  = $self->_write_match_results( $matches );
+	unless( $status ){
+		print STDERR "    Failed!\n";
+		return 0;
+	}
+
+	my $time1   = time;
+	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
+	print STDERR "  Time elapsed: $elapsed min\n";
+
+	return 1;
+}
+
+sub _load_motifs
+{
+	my $self         = shift;
+	my $matrix_files = shift;
+	my $outDir       = $self->{'outDir'};
+	my $Parameters   = $self->{'parameters'};
+	my @motifs;
+
+	if( -s $matrix_files ){
+		open( MAT, $matrix_files ) or (
+			print STDERR "    Could not open file: $matrix_files at '_load_motifs'\n" and
+			return 0
+		);
+
+		while( my $m_file = <MAT> ){
+			chomp $m_file;
+
+			if( -s $m_file ){
+				my $Motif = new MOTIF(
+					file       => $m_file,
+					outDir    => $outDir,
+					parameters => $Parameters,
+				);
+				push( @motifs, $Motif );
+			}
+		}
+		return \@motifs if @motifs;
+	}
+	return 0;
+}
+
+sub _extract_ref_sequences
+{
+	my $self       = shift;
+	my $procFile   = $self->get_file;
+	my $outDir     = $self->{'outDir'};
+	my $Parameters = $self->{'parameters'};
+	my $padding    = $Parameters->get_value('SNP_PADD');
+	my $genome     = $Parameters->get_value('REFGEN_FILE');
+	my $bedtools   = $Parameters->get_value('BEDTOOLS');
+
+	# Generate BED file using padded regions around each SNP
+	my $bedFile = "$outDir/ref_seqs.bed";
+	`tail -n +2 $procFile | awk '{print \$1,\$2-$padding,\$2+$padding-1}' OFS='\\t' > $bedFile`;
+
+	my $ref_seqs = "$outDir/ref_seqs.txt";
+	`$bedtools getfasta -fi $genome -bed $bedFile -tab -fo /dev/stdout | cut -f2 > $ref_seqs`;
+
+	return $ref_seqs if -s $ref_seqs;
+	return 0;
+}
+
+sub _build_allele_sequences
+{
+	my $self       = shift;
+	my $refFile    = shift;
+	my $procFile   = $self->get_file;
+	my $outDir     = $self->{'outDir'};
+	my $Parameters = $self->{'parameters'};
+	my $padding    = $Parameters->get_value( 'SNP_PADD' );
+	my $seqFile    = "$outDir/seqs.fasta";
+
+	my $IN     = $self->Open;
+	my $header = <$IN>;
+	open( SEQ, $refFile ) or
+		die "ERROR: Could not open file: $refFile at '_build_allele_sequences'\n";
+	open( OUT, ">$seqFile" ) or
+		die "ERROR: Could not create file: $seqFile at '_build_allele_sequences'\n";
+
+	# Print header
+	print OUT ">allele-sequences\n";
+
+=pod
+0 CHR
+1 START
+2 END
+3 REF_BASE
+4 S_BASE
+5 W_BASE
+6 S_READS
+7 W_READS
+=cut
+	while( my $line = <$IN> ){
+		chomp $line;
+		my @split   = split( "\t", $line );
+		my $r_base  = $split[2];
+		my @s_bases = split( ',', $split[3] );
+		my @w_bases = split( ',', $split[4] );
+		my $ref_seq = uc <SEQ>;
+		chomp $ref_seq;
+
+		# Get most abundant s_base
+		my %bases;
+
+		for my $base ( @s_bases ){
+			$bases{$base}++;
+		}
+		my @sorted = sort{ $bases{$b} <=> $bases{$a} } keys %bases;
+		my $s_base = $sorted[0];
+
+		# Get most abundant w_base
+		my $w_base;
+
+		for my $base ( @w_bases ){
+			$bases{$base}++;
+		}
+		@sorted = sort{ $bases{$b} <=> $bases{$a} } keys %bases;
+
+		for my $base ( @sorted ){
+			next if $base eq 'N';
+			$w_base = $base;
+		}
+		$w_base = 'N' unless $w_base;
+
+		# Print sequences for both alleles
+		my $s_seq = $ref_seq;
+		my $w_seq = $ref_seq;
+
+		if( $s_base eq $r_base ){
+			substr( $s_seq, $padding, 1, $s_base );
+			substr( $w_seq, $padding, 1, $w_base );
+			print OUT "$s_seq$w_seq";
+		}
+		else{
+			substr( $s_seq, $padding, 1, $w_base );
+			substr( $w_seq, $padding, 1, $s_base );
+			print OUT "$s_seq$w_seq";
+		}
+	}
+	print OUT "\n";
+
+	$self->Close;
+	close SEQ;
+	close OUT;
+
+	return $seqFile if -s $seqFile;
+	return 0;
+}
+
+sub _find_matches
+{
+	my $self       = shift;
+	my $seqFile    = shift;
+	my $motifs     = shift;
+	my $procFile   = $self->get_file;
+	my $outDir     = $self->{'outDir'};
+	my $Parameters = $self->{'parameters'};
+	my $padding    = $Parameters->get_value('SNP_PADD');
+	my $moods      = $Parameters->get_value('MOODS');
+	my $pval_cf    = $Parameters->get_value('MOODS_PVAL');
+
+	# Generate temporary motif files
+	my @fw_motif_files;
+	my @rc_motif_files;
+
+	for my $Motif ( @$motifs ){
+		my $m_file  = $Motif->get_file;
+		my $m_base  = $Motif->get_base;
+		my $fw_file = $Motif->get_forward_file;
+		my $rc_file = $Motif->get_reverse_file;
+		push( @fw_motif_files, $fw_file );
+		push( @rc_motif_files, $rc_file );
+	}
+	my $fw_motif_list = join( ' ', @fw_motif_files );
+	my $rc_motif_list = join( ' ', @rc_motif_files );
+
+	# Run MOODS
+	# MOODS produces zero-based positions in its output
+	my @fw_out = `$moods -f $pval_cf $seqFile $fw_motif_list 2>&1 | grep -vP "^(cal|loa|Mat|Hit|Tot|\\n+)" | awk 'NF'`;
+	my @rc_out = `$moods -f $pval_cf $seqFile $rc_motif_list 2>&1 | grep -vP "^(cal|loa|Mat|Hit|Tot|\\n+)" | awk 'NF'`;
+
+	# Process MOODS output
+	my $fw_moods_out  = _read_moods_output( \@fw_out );
+	my $rc_moods_out  = _read_moods_output( \@rc_out );
+
+	# Deconvolute MOODS output
+	my $fw_matches    = _deconvolute_moods_hits( $fw_moods_out, $motifs, $padding );
+	my $rc_matches    = _deconvolute_moods_hits( $rc_moods_out, $motifs, $padding );
+	my @matches       = ( $fw_matches, $rc_matches );
+
+	return \@matches;
+}
+
+sub _read_moods_output
+{
+	my $output = shift;
+	my %moods_out;
+	my $m_base;
+	my @scores;
+
+	while( my $line = shift @$output ){
+		chomp $line;
+
+		if( $line =~ /^\d/ ){
+			push( @scores, $line );
+		}
+		else{
+			if( @scores ){
+				my @cp_scores = @scores;
+				$moods_out{$m_base} = \@cp_scores;
+				undef @scores;
+			}
+
+			$m_base = $line;
+			$m_base =~ s/^.*\///;
+			$m_base =~ s/_(fw|rc)\.mat$//;
+		}
+	}
+	$moods_out{$m_base} = \@scores;
+
+	return \%moods_out;
+}
+
+sub _deconvolute_moods_hits
+{
+	my $moods_out = shift;
+	my $motifs    = shift;
+	my $padding   = shift;
+	my %matches;
+
+	for my $Motif ( @$motifs ){
+		my $m_base  = $Motif->get_base;
+		my $m_len   = $Motif->get_motif_length;
+		my $c_score = $Motif->get_canonical_score;
+		my $hits    = $moods_out->{$m_base} or next;
+
+		my $hit     = shift @$hits;
+		my $i       = 0;
+		my $snp_pos = ( 2 * $i + 1 ) * $padding;
+		# MOODS produces zero-based positions in its output
+		my(
+			$h_start,
+			$score,
+		) = split( "\t", $hit );
+		my $h_end   = $h_start + $m_len - 1;
+		
+		do{
+			my $aa = sprintf( "%.3f",$score/$c_score );
+			if( $h_start > $snp_pos + $padding - 1 ){
+				$i++;
+				$snp_pos = ( 2 * $i + 1 ) * $padding;
+			}
+			elsif( $h_start <= $snp_pos and $snp_pos <= $h_end ){
+				# Correct h_start and h_end
+				my $rel_start = $h_start - $i * 2 * $padding;
+				my $rel_end   = $rel_start + $m_len - 1;
+
+				push( @{$matches{$i}{"$m_base:$rel_start:$rel_end"}}, ($score, $score/$c_score) );
+
+				$hit   = shift @$hits;
+				(
+					$h_start,
+					$score,
+				) = split( "\t", $hit );
+				$h_end = $h_start + $m_len - 1;
+			}
+			else{
+				$hit   = shift @$hits;
+				(
+					$h_start,
+					$score,
+				) = split( "\t", $hit );
+				$h_end = $h_start + $m_len - 1;
+			}
+		} until( scalar @$hits == 0 );
+	}
+
+	return \%matches;
+}
+
+sub _write_match_results
+{
+	my $self       = shift;
+	my $matches    = shift;
+	my $procFile   = $self->get_file;
+	my $hitFile   = $self->get_hitFile;
+	my $Parameters = $self->{'parameters'};
+	my $score_cf   = $Parameters->get_value( 'MIN_SCORE' );
+	my $padding    = $Parameters->get_value( 'SNP_PADD' );
+	my $tmpFile   = "$hitFile.tmp";
+
+	if( scalar @$matches == 0 ){
+		print STDERR "    No motif matches found\n";
+		return 0;
+	}
+
+	open( OUT, ">$tmpFile" ) or
+		die "    Failed to create file: $tmpFile!\n";
+
+	my $PROC       = $self->Open;
+	my $header     = <$PROC>;
+	chomp $header;
+	my @header     = split( "\t", $header );
+
+	my @hit_header = (
+	 	'MOTIF_NAME',
+		'TF_NAME',
+		'HIT_START',
+		'HIT_END',
+		'HIT_LENGTH',
+		'HIT_STRAND',
+		'HIT_SCORE_1',
+		'HIT_SCORE_2',
+		'HIT_NORM_SCORE_1',
+		'HIT_NORM_SCORE_2',
+	);
+	my $insert = 14;
+	splice( @header, $insert, 0, @hit_header );
+	print OUT join( "\t", @header ), "\n";
+
+	my $i = 0;
+
+	while( my $line = <$PROC> ){
+		chomp $line;
+		my @split = split( "\t", $line );
+		my $start = $split[1];
+		my $sign  = '+';
+
+		# Go through each match type (fw and rc)
+		for my $match ( @$matches ){
+			# Hits on allele 1
+			if( $match->{$i} ){
+				# {$i} = [{$m_base:$rel_start:$rel_end} = [$score, $score/$c_score]]
+				for my $h_coor ( keys %{$match->{$i}} ){
+					my(
+					 	$m_base,
+						$h_start,
+						$h_end,
+					) = split( ':', $h_coor );
+					# Get motif length
+					my $m_len = $h_end - $h_start + 1;
+					# Correct h_start and h_end relative to SNP position
+					$h_start = $h_start - $padding;
+					$h_end   = $h_end   - $padding;
+
+					my(
+					 	$m_code,
+						$m_version,
+						$tf_name,
+					) = split( '_', $m_base );
+					my $m_name = "$m_code\_$m_version";
+
+					my(
+						$score1,
+						$n_score1,
+					) = @{$match->{$i}{$h_coor}};
+					next unless $n_score1 >= $score_cf;
+
+					# Hits on allele 2
+					if( $match->{$i+1}{$h_coor} ){
+						# {$i} = [{$m_base:$rel_start:$rel_end} = [$score, $score/$c_score]]
+						my(
+							$score2,
+							$n_score2,
+						) = @{$match->{$i+1}{$h_coor}};
+
+						if( $n_score1 > $n_score2 ){
+							my @hit = (
+								$m_name,
+								$tf_name,
+								$h_start,
+								$h_end,
+								$m_len,
+								$sign,
+								sprintf( "%.3f", $score1 ),
+								sprintf( "%.3f", $score2 ),
+								sprintf( "%.3f", $n_score1 ),
+								sprintf( "%.3f", $n_score2 ),
+							);
+							splice( @split, $insert, 0, @hit );
+							print OUT join( "\t", @split ), "\n";
+						}
+					}
+					else{
+						my @hit = (
+							$m_name,
+							$tf_name,
+							$h_start,
+							$h_end,
+							$m_len,
+							$sign,
+							sprintf( "%.3f", $score1 ),
+							'0.000',
+							sprintf( "%.3f", $n_score1 ),
+							'0.000',
+						);
+						splice( @split, $insert, 0, @hit );
+						print OUT join( "\t", @split ), "\n";
+					}
+				}
+			}
+			$sign = '-';
+		}
+		$i += 2;
+	}
+	$self->Close;
+	close OUT;
+
+	`head -n1 $tmpFile > $hitFile`;
+	`tail -n +2 $tmpFile | sort -Vk1,1 -k2,2n >> $hitFile`;
+	`rm -f $tmpFile`;
+
+	return 1;
+}
+
+sub annotate
+{
+	my $self   = shift;
+	my $value  = shift;
+	my $datBed = $self->get_file;
+	my $hitBed = $self->get_hitFile;
+	my $outDir = $self->get_outDir;
+	my $fields = 15; # Number of fields in ASB file without annotation
+	my $time0  = time;
+
+	if( $value !~ /^(DISEASE|GENE)$/ ){
+		print STDERR "    Could not understand value: $value!\n";
+		return 0;
+	}
+	print STDERR "  Annotating positions with closest $value ... \n";
+
+	if( -s $datBed ){
+		print STDERR "    Annotating DAT file\n";
+
+		if( $value eq 'DISEASE' ){
+			$self->_annotate_disease( $datBed, $fields );
+		}
+		elsif( $value eq 'GENE' ){
+			$self->_annotate_genes( $datBed, $fields + 6 );
+		}
+	}
+	elsif( -s $hitBed ){
+		print STDERR "    Annotating HIT file\n";
+		# Add 10 fields from the hit annotation
+		$fields += 10;
+
+		if( $value eq 'DISEASE' ){
+			$self->_annotate_disease( $hitBed, $fields );
+		}
+		elsif( $value eq 'GENE' ){
+			$self->_annotate_genes( $hitBed, $fields + 6 );
+		}
+	}
+	else{
+		print STDERR "    No files to annotate found!\n";
+		return 0;
+	}
+
+	my $time1   = time;
+	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
+	print STDERR "  Time elapsed: $elapsed min\n";
+
+	return 1;
+}
+
+sub _annotate_disease
+{
+	my $self       = shift;
+	my $aBed       = shift;
+	my $fields     = shift;
+	my $Parameters = $self->{'parameters'};
+	my $bBed       = $Parameters->get_value( 'DISANNO_FILE' );
+	my $bedtools   = $Parameters->get_value('BEDTOOLS');
+	my $chroms     = $Parameters->get_value('CHROMOSOMES');
+	# Set max number of columns that will be kept and appended with the annotation
+	my $annoFile   = $aBed . '.anno';
+
+	# Find closest disease SNP on each chromosome
+	# annoLine:
+	# rs61766198;Inflammatory_bowel_disease-EU;1;0	127
+	my @annoLines;
+
+	for my $chrom ( @$chroms ){
+		my $acBed = "$aBed.$chrom";
+		my $bcBed = "$bBed.$chrom";
+		`grep -P "^$chrom\t" $aBed > $acBed`;
+		`grep -P "^$chrom\t" $bBed > $bcBed`;
+		next unless -s $acBed;
+
+		my @lines;
+		if( -s $bcBed ){
+			@lines = `$bedtools closest -D "a" -a $acBed -b $bcBed 2> /dev/null`;
+		}
+		else{
+			my $dummy = "na;na;na;na\tna";
+			my $num   = `cat $acBed | wc -l`;
+
+			for( my $i = 0; $i < $num ; $i++ ){
+				push( @lines, $dummy );
+			}
+		}
+		push( @annoLines, @lines );
+	}
+	chomp @annoLines;
+	# Remove chromosome files
+	`rm -f $aBed.chr* $bBed.chr*`;
+
+	# Attach annotation to aBed lines
+	open( OUT, ">$annoFile" ) or
+		die "ERROR: Could not create file $annoFile\n";
+
+	my $header = `head -n1 $aBed`; chomp $header;
+	my @hSplit = split( "\t", $header );
+	my @header = splice( @hSplit, 0, $fields );
+	my @hAnno  = (
+		'DISEASE',
+		'AUTOIMMUNE',
+		'AUTOINFLAMMATORY',
+		'DIS_SNP_ID',
+		'DIS_SNP_DIST',
+		'DIS_SNP_ABS_DIST',
+	);
+	my @hOut = ( @header, @hAnno );
+	print OUT join( "\t", @hOut ), "\n";
+
+	for my $line ( @annoLines ){
+		chomp $line;
+		my @split   = split( "\t", $line );
+		my @aFields = splice( @split, 0, $fields );
+		my( $anno, $snpDist ) = splice( @split, -2 );
+		my(
+			$snpId,
+			$disease,
+			$autoimmune,
+			$autoinflam,
+		) = split( /[;\t]/, $anno );
+		my $absSnpDist = 'na';
+		$absSnpDist    = abs $snpDist if $snpDist ne 'na';
+		push( @aFields, $disease );
+		push( @aFields, $autoimmune );
+		push( @aFields, $autoinflam );
+		push( @aFields, $snpId );
+		push( @aFields, $snpDist );
+		push( @aFields, $absSnpDist );
+
+		print OUT join( "\t", @aFields ), "\n";
+	}
+	close OUT;
+
+	if( -s $annoFile ){
+	 	print STDERR "    Diseases annotated succesfully\n";
+		# Rename annotated file
+		`mv -f $annoFile $aBed`;
+	}
+	else{
+	 	print STDERR "    Failed!\n";
+		`rm -f $annoFile`;
+		return 0;
+	}
+
+	return 1;
+}
+
+sub _annotate_genes
+{
+	my $self       = shift;
+	my $aBed       = shift;
+	my $fields     = shift;
+	my $Parameters = $self->{'parameters'};
+	my $bBed       = $Parameters->get_value( 'GENANNO_FILE' );
+	my $bedtools   = $Parameters->get_value('BEDTOOLS');
+	my $chroms     = $Parameters->get_value('CHROMOSOMES');
+	# Set max number of columns that will be kept and appended with the annotation
+	my $annoFile   = $aBed . '.anno';
+
+	# Remove header
+	`tail -n +2 $aBed > $aBed.tmp`;
+	# Find closest disease SNP
+	# annoLine:
+	# DDX11L1	+	E1	54
+	my @annoLines;
+
+	for my $chrom ( @$chroms ){
+		my $acBed = "$aBed.$chrom";
+		my $bcBed = "$bBed.$chrom";
+		`grep -P "^$chrom\t" $aBed > $acBed`;
+		`grep -P "^$chrom\t" $bBed > $bcBed`;
+		next unless -s $acBed;
+
+		my @lines;
+		if( -s $bcBed ){
+			@lines = `$bedtools closest -D "a" -a $acBed -b $bcBed 2> /dev/null`;
+		}
+		else{
+			my $dummy = "na\tna\tna\tna";
+			my $num   = `cat $acBed | wc -l`;
+
+			for( my $i = 0; $i < $num ; $i++ ){
+				push( @lines, $dummy );
+			}
+		}
+		push( @annoLines, @lines );
+	}
+	chomp @annoLines;
+	# Remove chromosome files
+	`rm -f $aBed.chr* $bBed.chr*`;
+
+	# Attach annotation to aBed lines
+	open( OUT, ">$annoFile" ) or
+		die "ERROR: Could not create file $annoFile\n";
+
+	my $header = `head -n1 $aBed`; chomp $header;
+	my @hSplit = split( "\t", $header );
+	my @header = splice( @hSplit, 0, $fields );
+	my @hAnno  = (
+	 	'GENE',
+	 	'DESCRIPTION',
+		'STRAND',
+		'GEN_DIST',
+		'GEN_ABS_DIST',
+	);
+	my @hOut = ( @header, @hAnno );
+	print OUT join( "\t", @hOut ), "\n";
+
+	for my $line ( @annoLines ){
+		chomp $line;
+		my @split   = split( "\t", $line );
+		my @aFields = splice( @split, 0, $fields );
+		my(
+			$geneId,
+			$strand,
+			$feature,
+			$geneDist,
+		) = splice( @split, -4 );
+		my $absGeneDist = 'na';
+		$absGeneDist    = abs $geneDist if $geneDist ne 'na';
+		push( @aFields, $geneId );
+		push( @aFields, $strand );
+		push( @aFields, $feature );
+		push( @aFields, $geneDist );
+		push( @aFields, $absGeneDist );
+
+		print OUT join( "\t", @aFields ), "\n";
+	}
+	close OUT;
+
+	if( -s $annoFile ){
+	 	print STDERR "    Genes annotated succesfully\n";
+		# Rename annotated file
+		`mv -f $annoFile $aBed`;
+	}
+	else{
+	 	print STDERR "    Failed!\n";
+		`rm -f $annoFile`;
+		return 0;
+	}
+
+	return 1;
+}
+
+1;
