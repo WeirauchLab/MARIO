@@ -1,6 +1,7 @@
 # MARIO pipeline
 
 ## MARIO version 3.1
+* Added aligning capabilities with the HISAT2 aligner (not recommended to use with masked genomes)
 * Added quality control of FASTQ files through the -q option
 * Added use of BED file to generate a fake het-SNPs file spanning all positions
   in the BED file. This behavior is triggered if no genotyping file is given

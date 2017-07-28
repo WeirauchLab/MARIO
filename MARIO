@@ -19,8 +19,8 @@ if( $help and $help =~ /--help/ ){
 
 my %options;
 # ABDFGIMOPSX
-# abcdghpqrsxyz
-getopts('I:S:F:A:D:M:B:P:X:O:G:p:abcdghqrsxyz', \%options);
+# abcdghpqrstxyz
+getopts('I:S:F:A:D:M:B:P:X:O:G:p:abcdghqrstxyz', \%options);
 
 # Display help
 Messages::die_with_usage( $progName, $version, $created, $modified )
@@ -792,6 +792,7 @@ SAVE_DAT   = 1  # Save MARIO's raw output files (DAT format)
 FASTQC        = fastqc
 #P#FASTQDUMP  = fastq-dump
 #C#FASTQDUMP  = /data/weirauchlab/team/puj6ug/bin/fastq-dump  # Cluster
+HISAT2     = hisat2
 BOWTIE2    = bowtie2
 STAR       = STAR
 SAMTOOLS   = samtools
@@ -1785,7 +1786,7 @@ sub align_to_genome
 		$fastqs      .= " $fastq2" if $pe_flag;
 
 		# Run STAR aligner
-		`STAR --runThreadN $proc $modifiers $out_base --genomeDir $index --readFilesIn $fastqs 2> /dev/null`;
+		`$star --runThreadN $proc $modifiers $out_base --genomeDir $index --readFilesIn $fastqs 2> /dev/null`;
 		$total_reads  = `grep "Number of input reads"        $outDir/Log.final.out | cut -f2`; chomp $total_reads;
 		$num_aligned  = `grep "Uniquely mapped reads number" $outDir/Log.final.out | cut -f2`; chomp $num_aligned;
 
@@ -1795,6 +1796,32 @@ sub align_to_genome
 		# Save relevant STAR output files
 		`mv -f $outDir/Log.final.out $outDir/$base\_star.log 2> /dev/null`;
 		`rm -rf $outDir/*.tab $outDir/_STARtmp $outDir/*.out 2> /dev/null`;
+	}
+	# Use HISAT2 to align RNA-seq
+	if( $Parameters->get_value('t') ){
+		die "ERROR: Could not find HISAT2 aligner index files\n"
+			unless -s "$index.1.ht2";
+
+		my $hisat2    = $Parameters->get_value('HISAT2');
+		my $log_file  = "$outDir/$base\_hisat2.log";
+		my $modifiers = "--no-unal";
+		my $fastqs    = "-U $fastq1";
+
+		if( $pe_flag ){
+			$modifiers .= " --no-discordant --no-mixed";
+			$fastqs     = "-1 $fastq1 -2 $fastq2";
+		}
+
+		# Run HISAT2 aligner
+		unless( -s $bamFile ){
+			`$hisat2 -p $proc $modifiers -x $index $fastqs 2> $log_file | $samtools view -bS - > $bamFile 2> /dev/null`;
+			$total_reads = `head -n1 $log_file | sed 's|^ *||' | cut -d' ' -f1`; chomp $total_reads;
+			$num_aligned = `grep -A1 "exactly" $log_file | sed 's|^ *||' | cut -d' ' -f1 | paste -sd+ | bc`; chomp $num_aligned;
+		}
+		else{
+			$total_reads = `head -n1 $log_file | sed 's|^ *||' | cut -d' ' -f1`; chomp $total_reads;
+			$num_aligned = `grep -A1 "exactly" $log_file | sed 's|^ *||' | cut -d' ' -f1 | paste -sd+ | bc`; chomp $num_aligned;
+		}
 	}
 	# Align with BOWTIE2
 	else{
