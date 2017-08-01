@@ -1,6 +1,7 @@
 # MARIO pipeline
 
-## MARIO version 3.1
+## Change log:
+### MARIO version 3.1
 * Added aligning capabilities with the HISAT2 aligner (not recommended to use with masked genomes)
 * Added quality control of FASTQ files through the -q option
 * Added use of BED file to generate a fake het-SNPs file spanning all positions
@@ -8,43 +9,41 @@
   or the option -g is provided
 * It now uses "bedtools closest" to annotate positions with disease SNPs and genes
 
-## MARIO version 3.0
+### MARIO version 3.0
 * Major rearrangement of the logic of the program
   It now has more control on the provided inputs and outputs
 
+--------------------------------------------------------------------------------
 
 ## Scheme of MARIO version 3.1 pipeline
 
-`+-----------------------------------------------------------+
+```
++-----------------------------------------------------------+
 |                                                           |
 | +-----[I]                       +-----[B]       +-----[G] |
-| |       |                       |       |       |       | |
 | | SRAID |                       |  BED  | ----> |  GEN  | |
-| |       |                       |       |  (b)  |       | |
 | +-------+                       +-------+       +-------+ |
 |     |                               ^               |     | 
 |     |                               | (c)           |     |
 |     v                               |               v     |
-| +-----[S]       +-----[F]       +-----[A]       +-----[D] |          ---          +-----[P]
-| |       |       |       |       |       |       |       | |        /     \        |       |
+| +-----[S]       +-----[F]       +-----[A]       +-----[D] |       +=======+       +-----[P]
 | |  SRA  | ----> | FASTQ | ----> |  BAM  | ----> |  DAT  | | ----> |  ASB  | <---- |  ANNO |
-| |       |  (f)  |       |  (a)  |       |  (d)  |       | |        \     /        |       |
-| +-------+       +-------+       +-------+       +-------+ |          ---          +-------+
+| +-------+       +-------+       +-------+       +-------+ |       +=======+       +-------+
 |                    (q)              ^                     |           |
 |                                     |                     |           |
 |                                     |                     |           v
-|                                 +-----[X]                 |          ---          +-----[M]
-|                                 |       |                 |        /     \        |       |
+|                                 +-----[X]                 |       +=======+       +-----[M]
 |                                 | INDEX |                 |       |  HIT  | <---- | MOTIF |
-|                                 |       |                 |        \     /        |       |
-|                                 +-------+                 |          ---          +-------+
+|                                 +-------+                 |       +=======+       +-------+
 |                                                           |
-+-----------------------------------------------------------+`
++-----------------------------------------------------------+
+```
 
 
-Input files:
+### Input files:
 
-`[I] SRA ID (i.e. SRR292383 )
+```
+[I] SRA ID (i.e. SRR292383 )
 [S] SRA file (i.e. SRR292383.sra)
 [F] Fastq file (paired-end reads should be given separated with ":", like: FQ1:FQ2)
 [A] Alignment file (BAM format)
@@ -64,11 +63,13 @@ Priority of input files:
     experiment type)
 (P) Parameter file
 (M) File with a list of motifs (PWMs)
-    (optional)`
+    (optional)
+```
 
 ### Optional parameters:
 
-`[f] Download SRA file and exit
+```
+[f] Download SRA file and exit
 [a] Generate FASTQ files and exit
 [d] Generate BAM file and exit
 
@@ -86,12 +87,15 @@ Priority of switches:
 (q) Do not perform quality control on FASTQ files
 (r) Keep duplicate reads
 (s) Input data is RNA-seq (STAR alignment)
-(t) Input data is RNA-seq (HISAT2 alignment)`
+(t) Input data is RNA-seq (HISAT2 alignment)
+```
 
 
 ### Output files:
 
-`(ASB) Allele-specific behavior at each heterozygous positions, including
+```
+(ASB) Allele-specific behavior at each heterozygous positions, including
       reproducibility score (ARS) and annotations
 (HIT) If motif files are given, the ASB file is further annotated with motif
-      hits on each heterozygous position`
+      hits on each heterozygous position
+```
