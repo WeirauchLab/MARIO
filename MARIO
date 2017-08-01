@@ -2590,33 +2590,6 @@ sub load_file
 	return 1;
 }
 
-sub generate_file
-{
-	my $self    = shift;
-	my $bedFile = shift;
-	open( IN, $bedFile ) or
-		die "ERROR: Could not open BED file $bedFile\n";
-	my $tmpFile = $bedFile;
-	$tmpFile    =~ s/.bed$/_tmp.gen/;
-	open( OUT, ">$tmpFile" ) or
-		die "ERROR: Could not create BED file $tmpFile\n";
-
-	while( my $line = <IN> ){
-		my( $chr, $pStart, $pEnd ) = split( "\t", $line );
-
-		for( my $p = $pStart; $p <= $pEnd; $p++ ){
-			print OUT "$chr\t$p\t$p\t1\n";
-		}
-	}
-	close IN;
-	close OUT;
-
-	# Make sure all positions are unique
-	`sort -u $tmpFile | sort -Vk1,1 -k2,2n > $tmpFile.tmp && mv $tmpFile.tmp $tmpFile`;
-
-	return $tmpFile;
-}
-
 sub split_gen_by_chr
 {
 	my $self       = shift;
