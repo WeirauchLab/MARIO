@@ -19,8 +19,8 @@ if( $help and $help =~ /--help/ ){
 
 my %options;
 # ABDFGIMOPSX
-# abcdghpqrstxyz
-getopts('I:S:F:A:D:M:B:P:X:O:G:p:abcdghqrstxyz', \%options);
+# abcdhpqrstxyz
+getopts('I:S:F:A:D:M:B:P:X:O:G:p:abcdhqrstxyz', \%options);
 
 # Display help
 Messages::die_with_usage( $progName, $version, $created, $modified )
@@ -189,7 +189,6 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 
 	# Take BAM file as input and call peaks if no BED file is provided or it's not requested
 	#-------------------------------------------------------------------------------
-	my $sbFlag;
 	if( $Parameters->get_value('A') ){
 		# Index and split BAM file by chromosomes
 		print STDERR "Index and split BAM file\n";
@@ -202,13 +201,15 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 		);
 		$Alignment->remove_duplicates
 			unless( $Parameters->get_value('r') );
-		$Alignment->split_bam_by_chr;
-		$sbFlag = 1;
 
 		unless( $Parameters->get_value('c') or $bFile ){
 			# Call peaks with MACS2
 			print STDERR "Call peaks from BAM file\n";
 			print STDERR "  > $input\n";
+
+			# Split BAM file y chromosomes
+			$Alignment->split_bam_by_chr;
+			$Parameters->set_value( 'splitBam', 1 );
 
 			my $Peaks = new PEAKS(
 				bamFile    => $Alignment->get_file,
@@ -217,6 +218,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 			);
 			$Peaks->call_peaks;
 			$Peaks->split_peaks_by_chr;
+			# Count reads under peaks using chrom-split BAM files
 			$Peaks->count_reads_under_peak( $Alignment->get_chr_files );
 
 			# Save BED files
@@ -236,12 +238,23 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 	if( $Parameters->get_value('d') ){
 		# Remove per chromosome BAM files (no longer used)
 		`rm -f $outDir/chr*.bam 2> /dev/null`;
+
+		# Save BAM file (no longer in use)
+		unless( $Parameters->get_value('SAVE_BAM') ){
+			`rm -f $input 2> /dev/null`;
+		}
 		next;
 	}
 
 	# Find allelic behavior
 	#---------------------------------------------------------------------------
 	if( $Parameters->get_value('A') ){
+		# Skip this step if no genotype file is given
+		unless( $Parameters->get_value('G') ){
+			print STDERR "WARNING: Cannot compute allelic behavior. Genotype file was not given.\n";
+			next;
+		}
+
 		# Index and split BAM file by chromosomes
 		print STDERR "Index and split BAM file\n";
 
@@ -251,7 +264,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 			outDir     => $outDir,
 		);
 		$Alignment->split_bam_by_chr
-			unless $sbFlag;
+			unless $Parameters->get_value('splitBam');
 
 		# Find allele-dependent behavior
 		my $base = $input;
@@ -274,23 +287,12 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 		);
 		print STDERR "Load genotyping information\n";
 
-		my $genFile;
 		if( $Parameters->get_value('G') and !$Parameters->get_value('g') ){
-			$genFile = $Parameters->get_value('G');
-		}
-		else{
-			if( $Parameters->get_value('B') ){
-				$genFile = $Genotyping->generate_file( $Parameters->get_value('B') );
-				$Parameters->set_value( 'b', 1 );
-			}
-			else{
-				die "ERROR: Genotyping files cannot be generated. BED file not present\n";
-			}
-		}
-		$Genotyping->load_file( $genFile );
+			$Genotyping->load_file( $Parameters->get_value('G') );
 		if( $Parameters->get_value('B') and !$Parameters->get_value('b') ){
 			my $gStatus = $Genotyping->filter( $bFile );
 			next unless $gStatus;
+		}
 		}
 		$Genotyping->split_gen_by_chr;
 		my $genFiles = $Genotyping->get_chr_files;
@@ -328,9 +330,10 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 	}
 }
 # Kill switches
-exit if $Parameters->get_value('f');
-exit if $Parameters->get_value('a');
-exit if $Parameters->get_value('d');
+exit if  $Parameters->get_value('f');
+exit if  $Parameters->get_value('a');
+exit if  $Parameters->get_value('d');
+exit if !$Parameters->get_value('G');
 
 # Save DAT files
 $Parameters->set_value( 'D', join( ',', @datFiles ) );
@@ -585,9 +588,6 @@ USAGE: $progName [options] <arguments>\e[0m\n
       -c  Do not call peaks
           (aligns reads to genome and exits)
 
-      -g  Do not use genotyping information
-          (searches for allelic behavior at every single position)
-
       -b  Do not require het SNPs to fall within peaks
           (het SNPs are normally required to fall within peaks)
 
@@ -696,7 +696,8 @@ Priority of switches:
 (p) Number of threads (default: use all available threads)
 (q) Do not perform quality control on FASTQ files
 (r) Keep duplicate reads
-(s) Input data is RNA-seq
+(s) Input data is RNA-seq (STAR alignment)
+(t) Input data is RNA-seq (HISAT2 alignment)
 
 
 Output files:
@@ -718,13 +719,20 @@ sub print_parameter_file
 #-------------------------------------------------------------------------------
 
 # Genotype files in:
-# /home/mario/Databases/genotyping_data/hetSNPs
+#P## /home/mario/Databases/genotyping_data/hetSNPs
+#C## /data/weirauchlab/databank/genomes/hg19/genotyping_data/hetSNPs
 # Bowtie2 index files:
-# /home/mario/Databases/Hsap/aligner_indices/BOWTIE2
+#P## /home/mario/Databases/Hsap/aligner_indices/BOWTIE2
+#C## /data/weirauchlab/databank/genomes/hg19/index/BOWTIE2
 # STAR index files (hets not masked):
-# /home/mario/Databases/Hsap/aligner_indices/STAR/hg19
+#P## /home/mario/Databases/Hsap/aligner_indices/STAR/hg19
+#C## /data/weirauchlab/databank/genomes/hg19/index/STAR/hg19
 # Motif files (for ChIP-seq experiments):
-# /home/mario/Databases/matrices/cisbp_matrices/motif_lists
+#P## /home/mario/Databases/matrices/cisbp_matrices/motif_lists
+#C## /data/weirauchlab/databank/genomes/hg19/cisbp_matrices/motif_lists
+# DB SNP 147 single file (use this file in case there is no available genotyping data)
+#P## /home/mario/Databases/genotyping_data/hetSNPs/dbSNP147_single.txt
+#C## /data/weirauchlab/databank/genomes/hg19/genotyping_data/hetSNPs/dbSNP147_single.txt
 
 #P## Human genome FASTA file
 #P#REFGEN_FILE  = /home/mario/Databases/Hsap/hg19/hg19.fa
@@ -1189,9 +1197,8 @@ sub _param_from_args
 	}
 
 	# Check required additional files
-	unless( $options->{'g'} ){
-		_require( $options, 'G' )
-			if( $input_file =~ /[ISFAD]/ and $kill_switch !~ /[fad]/ );
+	if( $options->{'G'} and $input_file =~ /[ISFA]/ and $kill_switch !~ /[fad]/ ){
+		_require( $options, 'G' );
 	}
 
 	if( $input_file =~ /[ISFA]/ and $kill_switch !~ /[fa]/ ){
@@ -1203,11 +1210,17 @@ sub _param_from_args
 			die "ERROR: Could not find STAR index files\n"
 				unless $sFiles;
 		}
+		elsif( $options->{'t'} ){
+			my $tFiles = `ls $options->{'X'}*.ht2 2> /dev/null | wc -l`;
+			chomp $tFiles;
+			die "ERROR: Could not find HISAT2 index files\n"
+				unless $tFiles;
+		}
 		else{
-			my $b_files = `ls $options->{'X'}*.bt2 2> /dev/null | wc -l`;
-			chomp $b_files;
+			my $bFiles = `ls $options->{'X'}*.bt2 2> /dev/null | wc -l`;
+			chomp $bFiles;
 			die "ERROR: Could not find BOWTIE2 index files\n"
-				unless $b_files;
+				unless $bFiles;
 		}
 		$self->{'parameters'}{'X'} = $options->{'X'};
 	}
@@ -1241,18 +1254,17 @@ sub _require
 sub _check_files_exist
 {
 	my $self = shift;
-	my @files_to_check =
-	(
+	my @files_to_check = (
 		'REFGEN_FILE',
 		'ARS_FILE',
 		'DISANNO_FILE',
 		'GENANNO_FILE',
 	);
-	my @progs_to_check =
-	(
+	my @progs_to_check = (
 		'FASTQC',
 		'FASTQDUMP',
 		'STAR',
+		'HISAT2',
 		'BOWTIE2',
 		'SAMTOOLS',
 		'BEDTOOLS',
@@ -1261,32 +1273,26 @@ sub _check_files_exist
 		'MOODS',
 	);
 
-	for my $code ( @files_to_check )
-	{
+	for my $code ( @files_to_check ){
 		my $file   = $self->get_value( $code );
 		my $status = `ls $file* 2> /dev/stdout`;
 
-		if( $status =~ /No such file or directory/ )
-		{
+		if( $status =~ /No such file or directory/ ){
 			die "ERROR: File not found: $file\n";
 		}
-		else
-		{
+		else{
 			print STDERR "  $code: File present\n";
 		}
 	}
 
-	for my $code ( @progs_to_check )
-	{
+	for my $code ( @progs_to_check ){
 		my $file   = $self->get_value( $code );
 		my $status = `ls $file* 2> /dev/stdout`;
 
-		if( $status =~ /command not found/ )
-		{
+		if( $status =~ /command not found/ ){
 			die "ERROR: Command not found: $file\n";
 		}
-		else
-		{
+		else{
 			print STDERR "  $code: Command present\n";
 		}
 	}
@@ -1798,7 +1804,7 @@ sub align_to_genome
 		`rm -rf $outDir/*.tab $outDir/_STARtmp $outDir/*.out 2> /dev/null`;
 	}
 	# Use HISAT2 to align RNA-seq
-	if( $Parameters->get_value('t') ){
+	elsif( $Parameters->get_value('t') ){
 		die "ERROR: Could not find HISAT2 aligner index files\n"
 			unless -s "$index.1.ht2";
 
