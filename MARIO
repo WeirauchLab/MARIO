@@ -2605,8 +2605,14 @@ sub split_gen_by_chr
 
 	for my $chr ( @$chroms ){
 		my $chrGenFile = "$outDir/$chr\_$genBase.gen";
-		`grep -P "^$chr\t" $genFile > $chrGenFile`;
-		my $numHets    = `cat $chrGenFile | wc -l`;
+
+		if( $genFile =~ /gz$/ ){
+			`zgrep -P "^$chr\t" $genFile > $chrGenFile`;
+		}
+		else{
+			`grep -P "^$chr\t" $genFile > $chrGenFile`;
+		}
+		my $numHets = `cat $chrGenFile | wc -l`;
 		chomp $numHets;
 
 		if( $numHets ){
