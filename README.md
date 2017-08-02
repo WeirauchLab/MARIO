@@ -1,7 +1,7 @@
 # MARIO pipeline
 
-A one-sentence or one paragraph description of the pipeline, with some example
-use cases.
+_A one-sentence or one paragraph description of the pipeline, with some example
+use cases._
 
 ## Installation requirements
 
@@ -12,8 +12,6 @@ MarkDuplicates, macs2, moods (locally-modified version)
 
 _two or three example use cases which could be run by the reviewers, and don't
 require massive external datasets_
-
---------------------------------------------------------------------------------
 
 ## Scheme of MARIO version 3.1 pipeline
 
