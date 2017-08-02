@@ -110,6 +110,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 
 	# Create FASTQ files from SRA files
 	#-------------------------------------------------------------------------------
+	my $qFlag = 0;
 	if( $Parameters->get_value('S') ){
 		print STDERR "Generate FASTQ file from SRA file\n";
 		print STDERR "  > $input\n";
@@ -121,7 +122,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 		$Fastq->generate( $input );
 		unless( $Parameters->get_value('q') ){
 			$Fastq->quality_control;
-			$Parameters->set_value( 'q', 1 );
+			$qFlag = 1;
 		}
 
 		# Save SRA file (no longer in use)
@@ -146,6 +147,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 
 	# Align reads to genome
 	#-------------------------------------------------------------------------------
+	my $rFlag = 0;
 	if( $Parameters->get_value('F') ){
 		print STDERR "Align reads to reference genome\n";
 
@@ -162,8 +164,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 		);
 		$Fastq->set_file1( $jFile1 );
 		$Fastq->set_file2( $jFile2 ) if $jFile2;
-		$Fastq->quality_control
-			unless( $Parameters->get_value('q') );
+		$Fastq->quality_control unless $qFlag;
 
 		# Align reads to genome
 		my $Alignment = new ALIGNMENT(
@@ -174,7 +175,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 		$Alignment->align_to_genome;
 		unless( $Parameters->get_value('r') ){
 			$Alignment->remove_duplicates;
-			$Parameters->set_value( 'r', 1 );
+			$rFlag = 1;
 		}
 
 		# Save FASTQ files (no longer in use)
@@ -189,6 +190,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 
 	# Take BAM file as input and call peaks if no BED file is provided or it's not requested
 	#-------------------------------------------------------------------------------
+	my $sFlag = 0;
 	if( $Parameters->get_value('A') ){
 		# Index and split BAM file by chromosomes
 		print STDERR "Index and split BAM file\n";
@@ -199,8 +201,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 			parameters => $Parameters,
 			outDir     => $outDir,
 		);
-		$Alignment->remove_duplicates
-			unless( $Parameters->get_value('r') );
+		$Alignment->remove_duplicates unless $rFlag;
 
 		unless( $Parameters->get_value('c') or $bFile ){
 			# Call peaks with MACS2
@@ -209,7 +210,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 
 			# Split BAM file y chromosomes
 			$Alignment->split_bam_by_chr;
-			$Parameters->set_value( 'splitBam', 1 );
+			$sFlag = 1;
 
 			my $Peaks = new PEAKS(
 				bamFile    => $Alignment->get_file,
@@ -263,8 +264,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 			parameters => $Parameters,
 			outDir     => $outDir,
 		);
-		$Alignment->split_bam_by_chr
-			unless $Parameters->get_value('splitBam');
+		$Alignment->split_bam_by_chr unless $sFlag;
 
 		# Find allele-dependent behavior
 		my $base = $input;
@@ -2083,6 +2083,7 @@ sub split_bam_by_chr
 
 	# Indexing
 	print STDERR "    Indexing BAM file\n";
+	`rm -f $bamFile.bai`;
 	`$samtools index $bamFile > /dev/null 2>&1`;
 
 	# Check if BAM file is sorted
