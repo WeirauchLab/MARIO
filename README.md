@@ -1,18 +1,17 @@
 # MARIO pipeline
 
-## Change log:
-### MARIO version 3.1
-* Added support for gzipped genotyping files
-* Added aligning capabilities with the HISAT2 aligner (not recommended to use with masked genomes)
-* Added quality control of FASTQ files through the -q option
-* Added use of BED file to generate a fake het-SNPs file spanning all positions
-  in the BED file. This behavior is triggered if no genotyping file is given
-  or the option -g is provided
-* It now uses "bedtools closest" to annotate positions with disease SNPs and genes
+A one-sentence or one paragraph description of the pipeline, with some example
+use cases.
 
-### MARIO version 3.0
-* Major rearrangement of the logic of the program
-  It now has more control on the provided inputs and outputs
+## Installation requirements
+
+fastqc, fastq-dump, hisat2, bowtie2, STAR, samtools, bedtools, picard-tools
+MarkDuplicates, macs2, moods (locally-modified version)
+
+## Usage
+
+_two or three example use cases which could be run by the reviewers, and don't
+require massive external datasets_
 
 --------------------------------------------------------------------------------
 
@@ -100,3 +99,27 @@ Priority of switches:
 (HIT) If motif files are given, the ASB file is further annotated with motif
       hits on each heterozygous position
 ```
+
+## Change log:
+### MARIO version 3.1
+* Added support for gzipped genotyping files
+* Added aligning capabilities with the HISAT2 aligner (not recommended to use with masked genomes)
+* Added quality control of FASTQ files through the -q option
+* Added use of BED file to generate a fake het-SNPs file spanning all positions
+  in the BED file. This behavior is triggered if no genotyping file is given
+  or the option -g is provided
+* It now uses "bedtools closest" to annotate positions with disease SNPs and genes
+
+### MARIO version 3.0
+* Major rearrangement of the logic of the program
+  It now has more control on the provided inputs and outputs
+
+## How to cite
+
+_fill this in whenever the publication details are available_
+
+## Authors
+
+| Name              | Email                       | Institution                    |
+|-------------------|-----------------------------|--------------------------------|
+| Dr. Mario Pujato  | mario.pujato -at- cchmc.org | Cincinnati Children's Hospital |
