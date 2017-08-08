@@ -7,16 +7,16 @@ Additionaly, the flexible design allows for multiple uses (detailed in diagram b
 
 ## External dependencies
 
-fastqc
-fastq-dump
-hisat2
-bowtie2
-STAR
-samtools
-bedtools
-picard-tools MarkDuplicates
-macs2
-moods (provided as a locally-modified version)
+ * fastqc
+ * fastq-dump
+ * hisat2
+ * bowtie2
+ * STAR
+ * samtools
+ * bedtools
+ * picard-tools MarkDuplicates
+ * macs2
+ * moods (provided as a locally-modified version)
 
 ## Usage examples
 ```
