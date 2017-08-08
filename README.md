@@ -1,7 +1,7 @@
 # MARIO pipeline
 
-The MARIO pipeline was designed to identify Allele-Specific Behavior (ASB) at
-heterozygous positions based on known genotyping information.
+The MARIO (Measurement of Allelic Ratio Informatics Operator) pipeline was designed to identify
+Allele-Specific Behavior (ASB) at heterozygous positions based on known genotyping information.
 
 Additionaly, the flexible design allows for multiple uses (detailed in diagram below)
 
@@ -19,35 +19,33 @@ Additionaly, the flexible design allows for multiple uses (detailed in diagram b
  * moods (provided as a locally-modified version)
 
 ## Usage examples
-```
-  Download SRA file from NCBI based on SRR ID (the downloaded SRA file is 89Mb in size)
-    > MARIO -I SRR1608989
-    > MARIO -I SRR1608989,SRR1608990   (this one downloads two SRA files -89Mb and 99Mb files)
+### Download SRA file from NCBI based on SRR ID (the downloaded SRA file is 89Mb in size)
+        MARIO -I SRR1608989
+        MARIO -I SRR1608989,SRR1608990   (this one downloads two SRA files -89Mb and 99Mb files)
 
-  Download and generate FASTQ files from SRR ID
-    > MARIO -fI SRR1608989 -C config_3.2.txt
+### Download and generate FASTQ files from SRR ID
+        MARIO -fI SRR1608989 -C config_3.2.txt
 
-  ChIP-seq experiments or similar:
-  Align FASTQ reads to hg19 genome (starting from downloaded SRA file)
-    > MARIO -aS SRR1608989.sra -C config_3.2.txt -X path_to_BOWTIE2_aligner_index_files/hg19
+### ChIP-seq experiments or similar:
+#### Align FASTQ reads to hg19 genome (starting from downloaded SRA file)
+        MARIO -aS SRR1608989.sra -C config_3.2.txt -X path_to_BOWTIE2_aligner_index_files/hg19
 
-  RNA-seq experiments:
-  Align FASTQ reads to hg19 genome (starting from downloaded SRA file)
-    > MARIO -aS SRR1608989.sra -C config_3.2.txt -sX path_to_STAR_aligner_index_files
-    > MARIO -aS SRR1608989.sra -C config_3.2.txt -tX path_to_HISAT2_aligner_index_files/hg19
+### RNA-seq experiments:
+#### Align FASTQ reads to hg19 genome (starting from downloaded SRA file)
+        MARIO -aS SRR1608989.sra -C config_3.2.txt -sX path_to_STAR_aligner_index_files
+        MARIO -aS SRR1608989.sra -C config_3.2.txt -tX path_to_HISAT2_aligner_index_files/hg19
 
-  Align to genome using paired-end reads
-    > MARIO -aF SRR1_1.fq.gz:SRR1_2.fq.gz -C config_3.2.txt -sX path_to_STAR_aligner_index_files
+### Align to genome using paired-end reads
+        MARIO -aF SRR1_1.fq.gz:SRR1_2.fq.gz -C config_3.2.txt -sX path_to_STAR_aligner_index_files
 
-  Align to genome using single and paired-end reads from different experiments
-    > MARIO -aF SRR1_1.fq.gz:SRR1_2.fq.gz,SRR2.fq.gz -C config_3.2.txt -sX path_to_STAR_aligner_index_files
+### Align to genome using single and paired-end reads from different experiments
+        MARIO -aF SRR1_1.fq.gz:SRR1_2.fq.gz,SRR2.fq.gz -C config_3.2.txt -sX path_to_STAR_aligner_index_files
 
-  Call peaks on BAM files
-    > MARIO -cA SRR1.bam,SRR2.bam -C config_3.2.txt
+### Call peaks on BAM files
+        MARIO -cA SRR1.bam,SRR2.bam -C config_3.2.txt
 
-  Find ASBs from BAM files
-    > MARIO -dA SRR1.bam,SRR2.bam -C config_3.2.txt -G path_to_genotyping_file/hetpos.txt
-```
+### Find ASBs from BAM files
+        MARIO -dA SRR1.bam,SRR2.bam -C config_3.2.txt -G path_to_genotyping_file/hetpos.txt
 
 ## Scheme of the MARIO pipeline
 
