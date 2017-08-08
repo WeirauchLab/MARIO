@@ -1914,9 +1914,6 @@ sub align_to_genome
 
 	# Use STAR with RNA-seq alignment (memory intensive! >32GB)
 	if( $Config->get_value('s') ){
-		die "ERROR: Could not find STAR aligner index files\n"
-			unless -s "$index/Genome";
-
 		my $star      = $Config->get_value('STAR');
 		my $modifiers = "--outSAMtype BAM Unsorted --quantMode GeneCounts --outSAMmultNmax 1 --outMultimapperOrder Random";
 		$modifiers   .= " --readFilesCommand zcat" if $gz_flag;
@@ -1938,9 +1935,6 @@ sub align_to_genome
 	}
 	# Use HISAT2 to align RNA-seq
 	elsif( $Config->get_value('t') ){
-		die "ERROR: Could not find HISAT2 aligner index files\n"
-			unless -s "$index.1.ht2";
-
 		my $hisat2    = $Config->get_value('HISAT2');
 		my $log_file  = "$outDir/$base\_hisat2.log";
 		my $modifiers = "--no-unal";
@@ -1964,17 +1958,6 @@ sub align_to_genome
 	}
 	# Align with BOWTIE2
 	else{
-		die "ERROR: Could not find BOWTIE2 aligner index files\n"
-			unless -s "$index.1.bt2";
-
-		# Decompress gz files for BOWTIE2
-		if( $gz_flag ){
-			print STDERR "    Decompressing FASTQ files before BOWTIE2 alignment\n";
-			`gunzip $fastq1 2> /dev/null`;
-			`gunzip $fastq2 2> /dev/null` if $pe_flag;
-			$fastq1 =~ s/.gz$//;
-			$fastq2 =~ s/.gz$// if $pe_flag;
-		}
 		my $bowtie2   = $Config->get_value('BOWTIE2');
 		my $log_file  = "$outDir/$base\_bowtie2.log";
 		my $modifiers = "--no-unal";
@@ -1994,13 +1977,6 @@ sub align_to_genome
 		else{
 			$totalReads = `head -n1 $log_file | sed 's|^ *||' | cut -d' ' -f1`; chomp $totalReads;
 			$numAligned = `grep -A1 "exactly" $log_file | sed 's|^ *||' | cut -d' ' -f1 | paste -sd+ | bc`; chomp $numAligned;
-		}
-
-		# Compress back FASTQ files
-		if( $gz_flag ){
-			print STDERR "    Compressing back FASTQ files\n";
-			`gzip $fastq1 2> /dev/null`;
-			`gzip $fastq2 2> /dev/null` if $pe_flag;
 		}
 	}
 
