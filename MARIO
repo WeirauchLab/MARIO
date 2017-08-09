@@ -126,7 +126,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 		}
 
 		# Save SRA file (no longer in use)
-		unless( $Config->get_value('SAVE_SRA') ){
+		if( !$Config->get_value('SAVE_SRA') ){
 			`rm -f $input 2> /dev/null`;
 		}
 		my $fastq1 = $Fastq->get_file1;
@@ -181,13 +181,13 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 		);
 		$Alignment->align_to_genome;
 
-		unless( $Config->get_value('r') ){
+		if( !$Config->get_value('r') ){
 			$Alignment->remove_duplicates;
 			$rFlag = 1;
 		}
 
 		# Save FASTQ files (no longer in use)
-		unless( $Config->get_value('SAVE_FASTQ') ){
+		if( !$Config->get_value('SAVE_FASTQ') ){
 			`rm -f $jFile1 2> /dev/null`;
 			`rm -f $jFile2 2> /dev/null` if $jFile2;
 		}
@@ -210,7 +210,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 			config  => $Config,
 			outDir  => $outDir,
 		);
-		unless( $Config->get_value('r') and $rFlag ){
+		if( !$Config->get_value('r') and !$rFlag ){
 			$Alignment->remove_duplicates;
 		}
 
@@ -235,7 +235,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 
 			# Save BED files
 			$bFile = $Peaks->get_file;
-			unless( $Config->get_value('SAVE_BED') ){
+			if( !$Config->get_value('SAVE_BED') ){
 				`rm -f $bFile 2> /dev/null`;
 			}
 			# Remove per chromosome BED files (no longer used)
@@ -272,7 +272,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 
 			if( $Config->get_value('B') and ! $Config->get_value('b') ){
 				my $gStatus = $Genotyping->filter( $bFile );
-				next unless $gStatus;
+				next if !$gStatus;
 			}
 			$Genotyping->split_gen_by_chr;
 			my $genFiles = $Genotyping->get_chr_files;
@@ -281,7 +281,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 			$AD_behavior->find_allelic_behavior( $Alignment, $genFiles );
 
 			# Save BAM file (no longer in use)
-			unless( $Config->get_value('SAVE_BAM') ){
+			if( !$Config->get_value('SAVE_BAM') ){
 				`rm -f $input 2> /dev/null`;
 			}
 			# Save BED file (no longer in use)
@@ -299,10 +299,10 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 		}
 		else{
 			# Remove per chromosome BAM files (no longer used)
-			`rm -f $outDir/chr*.bam 2> /dev/null`;
+			`rm -f $outDir/chr*.bam $outDir/*.bai 2> /dev/null`;
 
 			# Save BAM file (no longer in use)
-			unless( $Config->get_value('SAVE_BAM') ){
+			if( !$Config->get_value('SAVE_BAM') ){
 				`rm -f $input 2> /dev/null`;
 			}
 		}
@@ -317,7 +317,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 	}
 }
 # Exit the program if ASBs were NOT requested
-exit unless $Config->get_value('d');
+exit if !$Config->get_value('d');
 
 # Save DAT files
 $Config->set_value( 'D', join( ',', @datFiles ) );
@@ -381,7 +381,7 @@ if( $Config->get_value('D') ){
 			my $sFile = $iFile;
 			$sFile    =~ s/^.*\//$outDir\//;
 			`cp -f $iFile $sFile 2> /dev/null`
-				unless -s $sFile;
+				if !-s $sFile;
 		}
 	}
 
@@ -1101,8 +1101,10 @@ sub _configure
 		delete $include{'G'};
 	}
 	elsif( $options->{'A'} ){
-		$inputFile    = 'A';
-		$include{'A'} = 1;
+		$inputFile      = 'A';
+		$include{'A'}   = 1;
+		$options->{'a'} = 1;
+		$include{'a'}   = 1;
 
 		# Extract config from configuration file
 		_load_configuration_file( $options );
@@ -1224,6 +1226,7 @@ sub _configure
 	# Include common options
 	$include{'O'} = 1;
 	$include{'p'} = 1;
+	$include{'r'} = 1;
 
 	print STDERR "\n\e[1;31mConfiguration:\e[0m\n\n";
 	for my $conf ( keys %$options ){
@@ -1299,7 +1302,7 @@ sub _require_file
 
 			# Check file is provided
 			die "ERROR: Required file, \"$file\" in option \"$conf\", does not exist\n"
-				unless -s $file;
+				if !-s $file;
 		}
 	}
 	else{
@@ -1322,7 +1325,7 @@ sub _require_program
 		die "ERROR: Option \"$conf\" is missing\n";
 	}
 	die "ERROR: Required command \"$conf\" not found\n"
-		unless $status;
+		if !$status;
 
 	return 1;
 }
@@ -1418,7 +1421,7 @@ sub _require_d_group_options
 	_require_file( $options, 'REFGEN_FILE' );
 	_require_program( $options, 'BEDTOOLS' );
 	_require_program( $options, 'SAMTOOLS' );
-	MESSAGES::print_ars_file() unless -s 'ARS_table.txt';
+	MESSAGES::print_ars_file() if !-s 'ARS_table.txt';
 
 	$include->{'CHROMOSOMES'}  = 1;
 	$include->{'REFGEN_FILE'}  = 1;
@@ -1510,7 +1513,7 @@ sub download
 	my $ftpSite = "ftp://ftp-trace.ncbi.nlm.nih.gov/sra/sra-instant/reads/ByRun/sra/$srr3/$srr6/$srr/$srr.sra";
 	`wget -t 10 -P $outDir -c $ftpSite > $logFile 2>&1`;
 
-	unless( -s $sraFile ){
+	if( !-s $sraFile ){
 		print STDERR "    Failed to download!\n";
 		return 0;
 	}
@@ -1621,7 +1624,7 @@ sub quality_control
 	`fastqc --extract -o $qcDir -f fastq $fastq1 2> /dev/null`;
 	my $num = `ls $qcDir/$base2*_fastqc/summary.txt | wc -l 2> /dev/null`;
 
-	unless( $num ){
+	if( !$num ){
 		print STDERR "    Failed QC!\n";
 		return 0;
 	}
@@ -1644,7 +1647,7 @@ sub quality_control
 		`fastqc --extract -o $qcDir -f fastq $fastq2 2> /dev/null`;
 		my $num = `ls $qcDir/$base2*_fastqc/summary.txt | wc -l 2> /dev/null`;
 
-		unless( $num ){
+		if( !$num ){
 			print STDERR "    Failed QC on paired reads!\n";
 			return 0;
 		}
@@ -1684,14 +1687,14 @@ sub generate
 	$fastq2     =~ s/^.*\//$outDir\//;
 
 	# Get FASTQ files
-	unless( -s $fastq1 ){
+	if( !-s $fastq1 ){
 		`$fastqDump --split-files $sraFile -O $outDir 2> /dev/null`;
 	}
 
 	# Check for validity of FASTQ sequences after splitting
 	my $status1 = check_fastq_file( $fastq1 );
 	die "ERROR: Invalid FASTQ file 1\n"
-		unless $status1;
+		if !$status1;
 	my $status2 = check_fastq_file( $fastq2 );
 
 	if( $status2 == 2 ){
@@ -1779,7 +1782,7 @@ sub new
 	my $fastq1;
 	my $fastq2;
 
-	unless( $chroms ){
+	if( !$chroms ){
 		_get_chroms_from_fa( $Config->get_value('REFGEN_FILE'), $Config );
 		$chroms = $Config->get_value('CHROMOSOMES');
 	}
@@ -1946,7 +1949,7 @@ sub align_to_genome
 		}
 
 		# Run HISAT2 aligner
-		unless( -s $bamFile ){
+		if( !-s $bamFile ){
 			`$hisat2 -p $proc $modifiers -x $index $fastqs 2> $log_file | $samtools view -bS - > $bamFile 2> /dev/null`;
 			$totalReads = `head -n1 $log_file | sed 's|^ *||' | cut -d' ' -f1`; chomp $totalReads;
 			$numAligned = `grep -A1 "exactly" $log_file | sed 's|^ *||' | cut -d' ' -f1 | paste -sd+ | bc`; chomp $numAligned;
@@ -1969,7 +1972,7 @@ sub align_to_genome
 		}
 
 		# Run BOWTIE2 aligner
-		unless( -s $bamFile ){
+		if( !-s $bamFile ){
 			`$bowtie2 -p $proc $modifiers -x $index $fastqs 2> $log_file | $samtools view -bS - > $bamFile 2> /dev/null`;
 			$totalReads = `head -n1 $log_file | sed 's|^ *||' | cut -d' ' -f1`; chomp $totalReads;
 			$numAligned = `grep -A1 "exactly" $log_file | sed 's|^ *||' | cut -d' ' -f1 | paste -sd+ | bc`; chomp $numAligned;
@@ -2032,11 +2035,11 @@ sub sort_bam
 	my $time0   = time;
 
 	`$samtools sort $bamFile $bamFile.sort > /dev/null 2>&1`;
-	print STDERR "    Failed to sort BAM file!\n" unless -s "$bamFile.sort.bam";
+	print STDERR "    Failed to sort BAM file!\n" if !-s "$bamFile.sort.bam";
 
 	`mv $bamFile.sort.bam $bamFile`;
 
-	unless( $self->{'aligned'} ){
+	if( !$self->{'aligned'} ){
 		my $numAligned     = _count_aligned_reads( $bamFile, $Config );
 		$self->{'aligned'} = $numAligned;
 	}
@@ -2058,12 +2061,12 @@ sub index_bam
 	print STDERR "  Indexing BAM file $bamFile\n";
 	my $time0    = time;
 
-	unless( -s "$bamFile.bai" ){
+	if( !-s "$bamFile.bai" ){
 		# Indexing
 		`$samtools index $bamFile > /dev/null 2>&1`;
 	}
 
-	unless( -s "$bamFile.bai" ){
+	if( !-s "$bamFile.bai" ){
 		print STDERR "    Failed!\n";
 		return 0;
 	}
@@ -2101,7 +2104,7 @@ sub remove_duplicates
 		$dups,
 		$percDup,
 	) = _remove_duplicate_reads( $bamFile, $Config );
-	die "    Failed!\n" unless $reads;
+	die "    Failed!\n" if !$reads;
 
 	my $perc    = sprintf( "%u", 100 - $percDup * 100 );
 	my $dReads  = $reads - $dups;
@@ -2124,7 +2127,7 @@ sub _remove_duplicate_reads
 	$bamBase    =~ s/\.bam$//;
 
 	`$picard I=$bamFile REMOVE_DUPLICATES=true O=$bamBase\_dedup.bam M=$bamBase\_picard.log 2> /dev/null`;
-	die "    Failed!\n" unless -s "$bamBase\_dedup.bam";
+	die "    Failed!\n" if !-s "$bamBase\_dedup.bam";
 	`mv -f $bamBase\_dedup.bam $bamFile 2> /dev/null`;
 
 	my $result = `grep -A1 "^LIBRARY" $bamBase\_picard.log | tail -1 | cut -f2,3,5,6,8`;
@@ -2164,7 +2167,7 @@ sub get_length_of_largest_read
 	my $readLength = `$samtools view $bamFile | head -n100000 | cut -f6 | grep -oP "^\\d+" | sort -nru | head -n1`;
 	chomp $readLength;
 
-	unless( $readLength ){
+	if( !$readLength ){
 		print STDERR "\n    Failed retrieving read length!\n";
 		return 0;
 	}
@@ -2209,7 +2212,7 @@ sub split_bam_by_chr
 
 		# Split BAM file
 		`$samtools view $bamFile $chr -b > $chrBamFile 2> /dev/null`
-			unless -s $chrBamFile;
+			if !-s $chrBamFile;
 
 		# Count number of reads in this chromosome
 		my $num_reads = _count_aligned_reads( $chrBamFile, $Config );
@@ -2342,14 +2345,14 @@ sub call_peaks
 	my $time0    = time;
 
 	# Call peaks only on nodup BAM file using MACS2
-	unless( -s $peakFile ){
+	if( !-s $peakFile ){
 		`$macs2 callpeak -t $bamFile -f BAM -g hs -n $outDir/$peakBase -B -q 0.01 2>/dev/null`;
 
 		my $np_file = "$outDir/$peakBase\_peaks.narrowPeak";
 
 		# MACS2 unable to build peak model due to few reads in the BAM file
 		# Run alternative, --nomodel, calculation
-		unless( -s $np_file ){
+		if( !-s $np_file ){
 			`$macs2 callpeak --nomodel --extsize 147 -t $bamFile -f BAM -g hs -n $outDir/$peakBase -B -q 0.01 2>/dev/null`;
 		}
 
@@ -2399,7 +2402,7 @@ sub split_peaks_by_chr
 	print STDERR "  Splitting peak file by chromosomes ...\n";
 	my $time0 = time;
 
-	unless( -s $peakFile ){
+	if( !-s $peakFile ){
 		print STDERR "    No peak file found!\n";
 		return 0;
 	}
@@ -2507,7 +2510,7 @@ sub count_reads_under_peak
 
 						# Filter by CIGAR line (exclude rare alignments)
 						my $cigar   = $split[5];
-						next unless $cigar =~ /^(\d+[MSHIND])+$/;
+						next if $cigar !~ /^(\d+[MSHIND])+$/;
 
 						my $r_chr   = $split[2];
 						my $r_start = $split[3];
@@ -2567,21 +2570,24 @@ sub count_reads_under_peak
 	# Count number of peaks in generated files
 	for my $chr ( @$chroms ){
 
-		if( -s $peakFiles->{$chr} ){
-			my $chrPeakFile = $peakFiles->{$chr};
-			my $rCount      = `cut -f6 $chrPeakFile | wc -l`; chomp $rCount;
+		if( $peakFiles->{$chr} ){
 
-			if( $rCount ){
-				print STDERR "    Number of counted peaks in $chr = $rCount\n";
-				$chrFiles{$chr} = $chrPeakFile;
-			}
-			else{
-				print STDERR "    No counted peaks in $chr\n";
+			if( -s $peakFiles->{$chr} ){
+				my $chrPeakFile = $peakFiles->{$chr};
+				my $rCount      = `cut -f6 $chrPeakFile | wc -l`; chomp $rCount;
+
+				if( $rCount ){
+					print STDERR "    Number of counted peaks in $chr = $rCount\n";
+					$chrFiles{$chr} = $chrPeakFile;
+				}
+				else{
+					print STDERR "    No counted peaks in $chr\n";
+				}
 			}
 		}
 	}
 
-	unless( keys %chrFiles ){
+	if( ! keys %chrFiles ){
 		print STDERR "    Failed!\n";
 		return 0;
 	}
@@ -2680,7 +2686,7 @@ sub load_file
 	my $time0   = time;
 
 	die "    Genotyping file not present or empty\n    $genFile\n"
-		unless -s $genFile;
+		if !-s $genFile;
 
 	my $numHets = `cat $genFile | wc -l`;
 	chomp $numHets;
@@ -2735,7 +2741,7 @@ sub split_gen_by_chr
 		}
 	}
 
-	unless( keys %chrFiles ){
+	if( ! keys %chrFiles ){
 		print STDERR "    Failed splitting genotyping file!\n";
 		return 0;
 	}
@@ -2899,7 +2905,7 @@ sub find_allelic_behavior
 		my %genotype;
 		if( defined $genFiles ){
 			die "ERROR: Missing genotyping information for chromosome $chr\n"
-				unless $genFiles->{$chr};
+				if !$genFiles->{$chr};
 
 			my $g_file = $genFiles->{$chr};
 			open( GEN, $g_file ) or
@@ -3476,7 +3482,7 @@ sub get_forward_file
 	);
 
     die "ERROR: Failed generating forward motif file $file_name\n" 
-		unless -s "$file_name";
+		if !-s "$file_name";
 
     return $Matfile->get_file;
 }
@@ -3502,7 +3508,7 @@ sub get_reverse_file
 	);
 
     die "ERROR: Failed generating reverse motif file $file_name\n" 
-		unless -s "$file_name";
+		if !-s "$file_name";
 
     return $Matfile->get_file;
 }
@@ -3548,7 +3554,7 @@ sub _process_matrix_file
 	my $matrix = _process_jaspar_format( $self );
 
 	die "ERROR: Failed processing matrix file $self->get_file\n" 
-		unless $matrix;
+		if !$matrix;
 
 	$self->{'motifMatrix'} = $matrix;
 	$self->{'motif_length'} = scalar @{$matrix->[0]};
@@ -4150,7 +4156,7 @@ sub find_motif_matches
 
 	# Load MOTIFS
 	my $motifs  = $self->_load_motifs( $mFiles );
-	unless( $motifs ){
+	if( !$motifs ){
 		print STDERR "    Failed loading motifs!\n";
 		return 0;
 	}
@@ -4158,7 +4164,7 @@ sub find_motif_matches
 	# Extract genomic sequences
 	print STDERR "    Extracting REF sequences\n";
 	my $ref_seqs = $self->_extract_ref_sequences;
-	unless( $ref_seqs ){
+	if( !$ref_seqs ){
 		print STDERR "    Failed!\n";
 		return 0;
 	}
@@ -4166,7 +4172,7 @@ sub find_motif_matches
 	# Print allele sequences to a temporary FASTA file
 	print STDERR "    Building allele sequences\n";
 	my $allele_seqs = $self->_build_allele_sequences( $ref_seqs );
-	unless( $allele_seqs ){
+	if( !$allele_seqs ){
 		print STDERR "    Failed!\n";
 		return 0;
 	}
@@ -4174,7 +4180,7 @@ sub find_motif_matches
 	# Find MOTIF matches
 	print STDERR "    Finding matches\n";
 	my $matches = $self->_find_matches( $allele_seqs, $motifs );
-	unless( $matches ){
+	if( !$matches ){
 		print STDERR "    Failed!\n";
 		return 0;
 	}
@@ -4182,7 +4188,7 @@ sub find_motif_matches
 	# print_results
 	print STDERR "    Writing results\n";
 	my $status  = $self->_write_match_results( $matches );
-	unless( $status ){
+	if( !$status ){
 		print STDERR "    Failed!\n";
 		return 0;
 	}
@@ -4306,7 +4312,7 @@ sub _build_allele_sequences
 			next if $base eq 'N';
 			$w_base = $base;
 		}
-		$w_base = 'N' unless $w_base;
+		$w_base = 'N' if !$w_base;
 
 		# Print sequences for both alleles
 		my $s_seq = $ref_seq;
@@ -4540,7 +4546,7 @@ sub _write_match_results
 						$score1,
 						$n_score1,
 					) = @{$match->{$i}{$h_coor}};
-					next unless $n_score1 >= $score_cf;
+					next if $n_score1 < $score_cf;
 
 					# Hits on allele 2
 					if( $match->{$i+1}{$h_coor} ){
@@ -4671,7 +4677,7 @@ sub _annotate_disease
 		my $bcBed = "$bBed.$chrom";
 		`grep -P "^$chrom\t" $aBed > $acBed`;
 		`grep -P "^$chrom\t" $bBed > $bcBed`;
-		next unless -s $acBed;
+		next if !-s $acBed;
 
 		my @lines;
 		if( -s $bcBed ){
@@ -4771,7 +4777,7 @@ sub _annotate_genes
 		my $bcBed = "$bBed.$chrom";
 		`grep -P "^$chrom\t" $aBed > $acBed`;
 		`grep -P "^$chrom\t" $bBed > $bcBed`;
-		next unless -s $acBed;
+		next if !-s $acBed;
 
 		my @lines;
 		if( -s $bcBed ){
