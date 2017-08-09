@@ -1136,6 +1136,12 @@ sub _configure
 		$options->{'SAVE_FASTQ'} = 1;
 		$include{'SAVE_FASTQ'}   = 1;
 
+		if( $options->{'q'} ){
+			_require_program( $options, 'FASTQC' );
+			$include{'FASTQC'} = 1;
+			$include{'q'}      = 1;
+		}
+
 		# Require a-group and/or c-group  options
 		_require_a_group_options( $options, \%include );
 		_require_c_group_options( $options, \%include );
