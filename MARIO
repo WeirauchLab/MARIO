@@ -11,20 +11,19 @@ my $version  = $1 || '3.2';
 my $created  = '011017';
 my $modified = '080817';
 
-# Display help
-my $help = $ARGV[0];
-if( $help and $help =~ /--help/ ){
-	MESSAGES::die_with_usage( $progName, $version, $created, $modified );
-}
-
 my %options;
 # ABCDFGIMOSX
 # abcdfhnpqrstxyz
 getopts('I:S:F:A:D:M:B:C:X:O:G:p:hfadcqrstnxyz', \%options);
 
 # Display help
-MESSAGES::die_with_usage( $progName, $version, $created, $modified )
-	if( $options{'h'} or ! %options );
+if( ! %options ){
+	MESSAGES::die_with_usage();
+}
+if( $options{'h'} or ! %options ){
+	MESSAGES::print_usage( $progName, $version, $created, $modified );
+	exit;
+}
 
 if( $options{'x'} or $options{'y'} or $options{'z'} ){
 	# Print pipeline scheme
@@ -51,7 +50,7 @@ my $Config = new CONFIGURATION(
 # MAIN
 #||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-print STDERR "-------------------------------------------------------------------------------\n";
+print STDOUT "-------------------------------------------------------------------------------\n";
 my $time0 = time;
 
 # Processing input files
@@ -79,14 +78,14 @@ my @datFiles;
 for( my $i = 1; $i <= $iNum; $i++ ){
 	my $input = $inputs[$i-1];
 	my $bFile = $bedFiles->[$i-1] || 0;
-	print STDERR "\n>> Processing input \'$itype\' ($i/$iNum)\n";
-	print STDERR "  > $input\n\n";
+	print STDOUT "\n>> Processing input \'$itype\' ($i/$iNum)\n";
+	print STDOUT "  > $input\n\n";
 
 	# Download SRA files from NCBI
 	#-------------------------------------------------------------------------------
 	if( $Config->get_value('I') ){
-		print STDERR "Retrieving SRA file from NCBI's server\n";
-		print STDERR "  > $input\n";
+		print STDOUT "Retrieving SRA file from NCBI's server\n";
+		print STDOUT "  > $input\n";
 
 		my $Sra = new SRA(
 			sra_id => $input,
@@ -98,7 +97,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 		$input = $Sra->get_file;
 		$Config->set_value( 'S', $input );
 
-		print STDERR "\e[0;32m[ DONE ]\e[0m\n";
+		print STDOUT "\e[0;32m[ DONE ]\e[0m\n";
 	}
 	# Continue if FASTQ files were requested
 	next unless(
@@ -111,8 +110,8 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 	#-------------------------------------------------------------------------------
 	my $qFlag = 0;
 	if( $Config->get_value('S') ){
-		print STDERR "Generate FASTQ file from SRA file\n";
-		print STDERR "  > $input\n";
+		print STDOUT "Generate FASTQ file from SRA file\n";
+		print STDOUT "  > $input\n";
 
 		my $Fastq = new FASTQ(
 			config => $Config,
@@ -140,7 +139,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 		}
 		$Config->set_value( 'F', $input );
 
-		print STDERR "\e[0;32m[ DONE ]\e[0m\n";
+		print STDOUT "\e[0;32m[ DONE ]\e[0m\n";
 
 	}
 	# Continue if BAM files were requested
@@ -153,14 +152,14 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 	#-------------------------------------------------------------------------------
 	my $rFlag;
 	if( $Config->get_value('F') ){
-		print STDERR "Align reads to reference genome\n";
+		print STDOUT "Align reads to reference genome\n";
 
 		my @jFiles = split( ':', $input );
 		my $jFile1 = $jFiles[0];
 		my $jFile2 = $jFiles[1];
 
-		print STDERR "  > $jFile1\n";
-		print STDERR "  > $jFile2\n" if $jFile2;
+		print STDOUT "  > $jFile1\n";
+		print STDOUT "  > $jFile2\n" if $jFile2;
 
 		my $Fastq = new FASTQ(
 			config => $Config,
@@ -194,7 +193,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 		$input = $Alignment->get_file;
 		$Config->set_value( 'A',  $input );
 
-		print STDERR "\e[0;32m[ DONE ]\e[0m\n";
+		print STDOUT "\e[0;32m[ DONE ]\e[0m\n";
 	}
 
 	# Take BAM file as input and call peaks if no BED file is provided or it's not requested
@@ -202,8 +201,8 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 	my $sFlag;
 	if( $Config->get_value('A') ){
 		# Index and split BAM file by chromosomes
-		print STDERR "Index and split BAM file\n";
-		print STDERR "  > $input\n";
+		print STDOUT "Index and split BAM file\n";
+		print STDOUT "  > $input\n";
 
 		my $Alignment = new ALIGNMENT(
 			bamFile => $input,
@@ -216,8 +215,8 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 
 		if( $Config->get_value('c') and ! $bFile ){
 			# Call peaks with MACS2
-			print STDERR "Call peaks from BAM file\n";
-			print STDERR "  > $input\n";
+			print STDOUT "Call peaks from BAM file\n";
+			print STDOUT "  > $input\n";
 
 			# Split BAM file y chromosomes
 			$Alignment->split_bam_by_chr;
@@ -266,7 +265,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 				outDir => $outDir,
 				config => $Config,
 			);
-			print STDERR "Load genotyping information\n";
+			print STDOUT "Load genotyping information\n";
 
 			$Genotyping->load_file( $Config->get_value('G') );
 
@@ -277,7 +276,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 			$Genotyping->split_gen_by_chr;
 			my $genFiles = $Genotyping->get_chr_files;
 
-			print STDERR "Find ASBs at heterozygous positions\n";
+			print STDOUT "Find ASBs at heterozygous positions\n";
 			$AD_behavior->find_allelic_behavior( $Alignment, $genFiles );
 
 			# Save BAM file (no longer in use)
@@ -306,7 +305,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 				`rm -f $input 2> /dev/null`;
 			}
 		}
-		print STDERR "\e[0;32m[ DONE ]\e[0m\n";
+		print STDOUT "\e[0;32m[ DONE ]\e[0m\n";
 	}
 
 	# Load DAT files
@@ -321,28 +320,28 @@ exit if !$Config->get_value('d');
 
 # Save DAT files
 $Config->set_value( 'D', join( ',', @datFiles ) );
-print STDERR "DAT files: @datFiles\n";
+print STDOUT "DAT files: @datFiles\n";
 
 # Annotate DAT files
 #-------------------------------------------------------------------------------
 if( $Config->get_value('D') ){
 	# Second phase: obtain final results from all experiments
-	print STDERR "\n\e[0;36mINFO: Preparing results\e[0m\n";
+	print STDOUT "\n\e[0;36mINFO: Preparing results\e[0m\n";
 
 	my @iFiles = split( ',', $Config->get_value('D') );
 
 	# Load up the FDR lookup table
-	print STDERR "Load ARS table\n";
+	print STDOUT "Load ARS table\n";
 
 	my $ArScores = new ARS(
 		file   => $Config->get_value('ARS_FILE'),
 		outDir => $outDir,
 		config => $Config,
 	);
-	print STDERR "\e[0;32m[ DONE ]\e[0m\n";
+	print STDOUT "\e[0;32m[ DONE ]\e[0m\n";
 
 	# Make a selection based on given config
-	print STDERR "Merge allele-dependent candidate SNPs\n";
+	print STDOUT "Merge allele-dependent candidate SNPs\n";
 	my $asbFile = "$outDir/results.asb";
 
 	my $Postprocess = new POSTPROCESSING(
@@ -367,7 +366,7 @@ if( $Config->get_value('D') ){
 		$Postprocess->annotate( 'GENE', $fields )
 			if $Config->get_value('GENANNO_FILE');
 	}
-	print STDERR "\e[0;32m[ DONE ]\e[0m\n";
+	print STDOUT "\e[0;32m[ DONE ]\e[0m\n";
 
 	# Sort files in descending order by ARS values
 	`head -n1 $asbFile > $asbFile.sorted`;
@@ -389,8 +388,8 @@ if( $Config->get_value('D') ){
 
 	my $time1   = time;
 	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
-	print STDERR "\n\e[0;36mTotal time elapsed: $elapsed min\e[0m\n";
-	print STDERR "\e[0;32m[ DONE ]\e[0m\n";
+	print STDOUT "\n\e[0;36mTotal time elapsed: $elapsed min\e[0m\n";
+	print STDOUT "\e[0;32m[ DONE ]\e[0m\n";
 }
 
 exit;
@@ -431,7 +430,7 @@ sub add_cse_column
 	my $output = $file . ".tmp";
 	open( IN, $file ) or
 	(
-	 	print STDERR "  ERROR: Could not open file $file at 'add_cse_column'\n" and
+	 	print STDOUT "  ERROR: Could not open file $file at 'add_cse_column'\n" and
 		return 0
 	);
 	open( OUT, ">$output" ) or
@@ -467,21 +466,12 @@ package MESSAGES;
 use warnings;
 use strict;
 
-sub print_options
+sub die_with_usage
 {
-	my $options = shift;
-	print STDERR "\e[1;33mOPTIONS:\e[0m\n";
-
-	while( my( $var, $value ) = each %$options )
-	{
-		print STDERR "  $var:  \e[0;33m$value\e[0m\n";
-	}
-	print STDERR "\n";
-
-	return 1;
+	die "\n\e[0;31mUse option -h for help\e[0m\n\n";
 }
 
-sub die_with_usage
+sub print_usage
 {
 	my $progName = shift;
 	my $version  = shift;
@@ -489,17 +479,19 @@ sub die_with_usage
 	my $modified = shift;
 	#getopts('I:S:1:2:B:D:b:p:C:h', \%options);
 
-	die "\e[0;36m
---------------------------------------------------------------------------------
->> Created by Mario Pujato <<\n
-Created:  $created
-Modified: $modified\n
-Version: $version\n
-================================================================================\e[0;33m
-Identify Allele-Specific Behavior (ASB) at
-heterozygous positions from sequencing data\e[0m
-\e[1;33m
-USAGE: $progName [options] <arguments>\e[0m\n
+	print STDOUT
+"\e[0;36m--------------------------------------------------------------------------------\e[0m
+\e[0;36m>> Created by Mario Pujato <<
+
+\e[0;36mCreated:  $created\e[0m
+\e[0;36mModified: $modified\e[0m
+\e[0;36mVersion:  $version\e[0m
+
+\e[0;36m================================================================================\e[0m
+\e[0;33mIdentify Allele-Specific Behavior (ASB) at\e[0m
+\e[0;33mheterozygous positions from sequencing data\e[0m
+
+\e[1;33mUSAGE: $progName [options] <arguments>\e[0m\n
 
   [options]
 
@@ -565,14 +557,16 @@ USAGE: $progName [options] <arguments>\e[0m\n
       -y  Generate a default configuration file
       -z  Generate a default Allelic reproducibility score (ARS) file
 
-\e[0;36m--------------------------------------------------------------------------------
-\n";
+\e[0;36m--------------------------------------------------------------------------------\e[0m\n\n";
+
+	return 1;
 }
 
 sub print_scheme
 {
 	my $progName = shift;
 	my $version  = shift;
+
 	print "\nScheme of $progName version $version pipeline
 
 The pipeline can be used to start and/or generate any intermediate file in the scheme.
@@ -1012,7 +1006,7 @@ sub new
 	# Get input with the highest priority
 	$self->_configure( $options );
 
-#	print STDERR "\e[0;32m[ DONE ]\e[0m\n";
+#	print STDOUT "\e[0;32m[ DONE ]\e[0m\n";
 
 	return $self;
 }
@@ -1270,14 +1264,14 @@ sub _configure
 	$include{'p'} = 1;
 	$include{'r'} = 1;
 
-	print STDERR "\n\e[1;31mConfiguration:\e[0m\n\n";
+	print STDOUT "\n\e[1;31mConfiguration:\e[0m\n\n";
 	for my $conf ( keys %$options ){
 
 		if( $include{$conf} ){
 			my $value = $options->{$conf};
 
 			if( defined $value ){
-				printf STDERR ( "%14s: %s\n", $conf, $value );
+				printf STDOUT ( "%14s: %s\n", $conf, $value );
 
 				if( $conf eq 'CHROMOSOMES' ){
 					my @chrom = split( ',', $value );
@@ -1290,7 +1284,7 @@ sub _configure
 			}
 		}
 	}
-	print STDERR "\n-------------------------------------------------------------------------------\n";
+	print STDOUT "\n-------------------------------------------------------------------------------\n";
 
 	return 1;
 }
@@ -1322,7 +1316,7 @@ sub _load_configuration_file
 			$options{$conf} = $value;
 		}
 		else{
-			print STDERR "WARNING: Failed retrieving configuration line:\n  $line\n";
+			print STDOUT "WARNING: Failed retrieving configuration line:\n  $line\n";
 		}
 	}
 	close IN;
@@ -1515,7 +1509,7 @@ sub destroy
 	my $self = shift;
 	my $file = $self->{'file'};
 
-	print STDERR "  Removing SRA files\n";
+	print STDOUT "  Removing SRA files\n";
 	`rm -f "$file"`;
 
 	return 1;
@@ -1536,7 +1530,7 @@ sub download
 	my $srr     = $self->{'sra_id'};
 	my $config  = $self->{'config'};
 
-	print STDERR "  Downloading ...\n";
+	print STDOUT "  Downloading ...\n";
 	my $time0   = time;
 
 	# Download SRA file if incomplete or does not exist
@@ -1547,13 +1541,13 @@ sub download
 	`wget -t 10 -P $outDir -c $ftpSite > $logFile 2>&1`;
 
 	if( !-s $sraFile ){
-		print STDERR "    Failed to download!\n";
+		print STDOUT "    Failed to download!\n";
 		return 0;
 	}
 
 	my $time1   = time;
 	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
-	print STDERR "  Time elapsed: $elapsed min\n";
+	print STDOUT "  Time elapsed: $elapsed min\n";
 
 	return 1;
 }
@@ -1595,7 +1589,7 @@ sub destroy
 	my $file1 = $self->get_file1;
 	my $file2 = $self->get_file2;
 
-	print STDERR "  Removing FASTQ files\n";
+	print STDOUT "  Removing FASTQ files\n";
 
 	`rm -f $file1`;
 	`rm -f $file2` if $file2;
@@ -1638,7 +1632,7 @@ sub quality_control
 	my $self   = shift;
 	my $fastqc = $Config->get_value('FASTQC');
 	my $outDir = $self->{'outDir'};
-	print STDERR "  Performing quality control ...\n";
+	print STDOUT "  Performing quality control ...\n";
 	my $time0  = time;
 
 	my $fastq1 = $self->{'file1'};
@@ -1653,16 +1647,16 @@ sub quality_control
 
 	my $qcDir  = "$outDir/fastqc";
 	`mkdir -p $qcDir`;
-	print STDERR "  > $fastq1\n";
+	print STDOUT "  > $fastq1\n";
 	`fastqc --extract -o $qcDir -f fastq $fastq1 2> /dev/null`;
 	my $num = `ls $qcDir/$base2*_fastqc/summary.txt | wc -l 2> /dev/null`;
 
 	if( !$num ){
-		print STDERR "    Failed QC!\n";
+		print STDOUT "    Failed QC!\n";
 		return 0;
 	}
 	my $qcOut1 = `cut -f1,2 $qcDir/$base2*_fastqc/summary.txt 2> /dev/null | sed 's|^|    |'`;
-	print STDERR "$qcOut1";
+	print STDOUT "$qcOut1";
 
 	# Save to log file
 	`echo $fastq1 > $qcLog && cat $qcDir/$base2*_fastqc/summary.txt >> $qcLog`;
@@ -1676,16 +1670,16 @@ sub quality_control
 		$base2     =~ s/\.*$//;
 		$base      =~ s/(.*)_read[12]/$1/;
 		$base      =~ s/(.*)_[12]/$1/;
-		print STDERR "  > $fastq2\n";
+		print STDOUT "  > $fastq2\n";
 		`fastqc --extract -o $qcDir -f fastq $fastq2 2> /dev/null`;
 		my $num = `ls $qcDir/$base2*_fastqc/summary.txt | wc -l 2> /dev/null`;
 
 		if( !$num ){
-			print STDERR "    Failed QC on paired reads!\n";
+			print STDOUT "    Failed QC on paired reads!\n";
 			return 0;
 		}
 		my $qcOut2 = `cut -f1,2 $qcDir/$base2*_fastqc/summary.txt 2> /dev/null | sed 's|^|    |'`;
-		print STDERR "$qcOut2";
+		print STDOUT "$qcOut2";
 
 		# Save to log file
 		`echo $fastq2 >> $qcLog && cat $qcDir/$base2*_fastqc/summary.txt >> $qcLog`;
@@ -1695,7 +1689,7 @@ sub quality_control
 
 	my $time1   = time;
 	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
-	print STDERR "  Time elapsed: $elapsed min\n";
+	print STDOUT "  Time elapsed: $elapsed min\n";
 
 	return 1;
 }
@@ -1709,7 +1703,7 @@ sub generate
 	my $fastqDump = $Config->get_value('FASTQDUMP');
 	my $numFiles  = 0;
 
-	print STDERR "  Generating with --split-files option ...\n";
+	print STDOUT "  Generating with --split-files option ...\n";
 	my $time0   = time;
 
 	my $fastq1  = $sraFile;
@@ -1732,7 +1726,7 @@ sub generate
 
 	if( $status2 == 2 ){
 		`rm -f $fastq1 $fastq2 2> /dev/null`;
-		print STDERR "  Trying again without --split-files option ...\n";
+		print STDOUT "  Trying again without --split-files option ...\n";
 		# Get FASTQ files
 		`$fastqDump $sraFile -O $outDir 2> /dev/null`;
 	}
@@ -1747,7 +1741,7 @@ sub generate
 
 	my $time1   = time;
 	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
-	print STDERR "  Time elapsed: $elapsed min\n";
+	print STDOUT "  Time elapsed: $elapsed min\n";
 
 	return 1;
 }
@@ -1869,7 +1863,7 @@ sub destroy_files
 	my $self  = shift;
 	my $files = $self->{'chrFiles'};
 
-	print STDERR "  Removing BAM files split by chromosome\n";
+	print STDOUT "  Removing BAM files split by chromosome\n";
 	my @files = values %$files;
 	`rm -f @files`;
 
@@ -1935,16 +1929,16 @@ sub align_to_genome
 	my $pe_flag = 0;
 	if( $fastq2 ){
 		$pe_flag = 1;
-		print STDERR "  Aligning paired-end reads to $gVersion\n";
+		print STDOUT "  Aligning paired-end reads to $gVersion\n";
 	}
 	else{
-		print STDERR "  Aligning single-end reads to $gVersion\n";
+		print STDOUT "  Aligning single-end reads to $gVersion\n";
 	}
 
 	# Check for gzipped files
 	my $gz_flag = 0;
 	if( $fastq1 =~ /\.gz/ ){
-		print STDERR "    FASTQ files are compressed\n";
+		print STDOUT "    FASTQ files are compressed\n";
 		$gz_flag = 1;
 	}
 
@@ -2018,7 +2012,7 @@ sub align_to_genome
 
 	if( $numAligned ){
 		my $perc_aligned   = sprintf( "%.1f", $numAligned / $totalReads * 100 );
-		print STDERR "    Aligned reads = $numAligned ($perc_aligned%)\n";
+		print STDOUT "    Aligned reads = $numAligned ($perc_aligned%)\n";
 		$self->{'aligned'} = $numAligned;
 		$self->{'file'}    = $bamFile;
 	}
@@ -2028,7 +2022,7 @@ sub align_to_genome
 
 	my $time1   = time;
 	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
-	print STDERR "  Time elapsed: $elapsed min\n";
+	print STDOUT "  Time elapsed: $elapsed min\n";
 
 	return 1;
 }
@@ -2057,18 +2051,18 @@ sub sort_bam
 	# Skip this step if already performed
 	return 1 if $dupsFlag;
 
-	print STDERR "  Sorting BAM file ...\n";
+	print STDOUT "  Sorting BAM file ...\n";
 
 	# Check if BAM file is sorted
 	my $out = `$samtools view -H $bamFile | grep -oP "SO:\\w+"`;
 	if( $out !~ /unsorted/ ){
-		print STDERR "    BAM file is sorted\n";
+		print STDOUT "    BAM file is sorted\n";
 		return 1;
 	}
 	my $time0   = time;
 
 	`$samtools sort $bamFile $bamFile.sort > /dev/null 2>&1`;
-	print STDERR "    Failed to sort BAM file!\n" if !-s "$bamFile.sort.bam";
+	print STDOUT "    Failed to sort BAM file!\n" if !-s "$bamFile.sort.bam";
 
 	`mv $bamFile.sort.bam $bamFile`;
 
@@ -2079,7 +2073,7 @@ sub sort_bam
 
 	my $time1   = time;
 	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
-	print STDERR "  Time elapsed: $elapsed min\n";
+	print STDOUT "  Time elapsed: $elapsed min\n";
 
 	return 1;
 }
@@ -2091,7 +2085,7 @@ sub index_bam
 	my $Config   = $self->{'config'};
 	my $samtools = $Config->get_value( 'SAMTOOLS' );
 
-	print STDERR "  Indexing BAM file $bamFile\n";
+	print STDOUT "  Indexing BAM file $bamFile\n";
 	my $time0    = time;
 
 	if( !-s "$bamFile.bai" ){
@@ -2100,13 +2094,13 @@ sub index_bam
 	}
 
 	if( !-s "$bamFile.bai" ){
-		print STDERR "    Failed!\n";
+		print STDOUT "    Failed!\n";
 		return 0;
 	}
 
 	my $time1   = time;
 	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
-	print STDERR "  Time elapsed: $elapsed min\n";
+	print STDOUT "  Time elapsed: $elapsed min\n";
 
 	return 1;
 }
@@ -2120,12 +2114,12 @@ sub remove_duplicates
 	my $Config   = $self->{'config'};
 	my $samtools = $Config->get_value('SAMTOOLS');
 
-	print STDERR "  Removing duplicate reads ...\n";
+	print STDOUT "  Removing duplicate reads ...\n";
 
 	# Check if BAM file is sorted
 	my $out = `$samtools view -H $bamFile | grep -oP "SO:\\w+"`;
 	if( ! $out or $out =~ /unsorted/ ){
-		print STDERR "    Sorting BAM file\n";
+		print STDOUT "    Sorting BAM file\n";
 		`$samtools sort $bamFile $bamFile.sorted 2> /dev/null`;
 		`mv -f $bamFile.sorted.bam $bamFile 2> /dev/null`;
 	}
@@ -2141,12 +2135,12 @@ sub remove_duplicates
 
 	my $perc    = sprintf( "%u", 100 - $percDup * 100 );
 	my $dReads  = $reads - $dups;
-	print STDERR "    Unique reads returned = $dReads ($perc%)\n";
+	print STDOUT "    Unique reads returned = $dReads ($perc%)\n";
 	$self->{'aligned_filt'} = $dReads;
 
 	my $time1   = time;
 	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
-	print STDERR "  Time elapsed: $elapsed min\n";
+	print STDOUT "  Time elapsed: $elapsed min\n";
 
 	return 1;
 }
@@ -2195,18 +2189,18 @@ sub get_length_of_largest_read
 	my $samtools = $Config->get_value('SAMTOOLS');
 
 	# Get length of largest read
-	print STDERR "  Getting largest read length\n";
+	print STDOUT "  Getting largest read length\n";
 
 	my $readLength = `$samtools view $bamFile | head -n100000 | cut -f6 | grep -oP "^\\d+" | sort -nru | head -n1`;
 	chomp $readLength;
 
 	if( !$readLength ){
-		print STDERR "\n    Failed retrieving read length!\n";
+		print STDOUT "\n    Failed retrieving read length!\n";
 		return 0;
 	}
 	$self->{'readLength'} = $readLength;
 
-	print STDERR "    Read length = $readLength bp\n";
+	print STDOUT "    Read length = $readLength bp\n";
 	return 1;
 }
 
@@ -2223,11 +2217,11 @@ sub split_bam_by_chr
 	$base        =~ s/\.bam$//;
 	my %chrFiles;
 
-	print STDERR "  Split BAM file by chromosomes ...\n";
+	print STDOUT "  Split BAM file by chromosomes ...\n";
 	my $time0    = time;
 
 	# Indexing
-	print STDERR "    Indexing BAM file\n";
+	print STDOUT "    Indexing BAM file\n";
 	`rm -f $bamFile.bai`;
 	`$samtools index $bamFile > /dev/null 2>&1`;
 
@@ -2235,7 +2229,7 @@ sub split_bam_by_chr
 	my $out = `$samtools view -H $bamFile | grep -oP "SO:\\w+"`;
 
 	if( $out =~ /unsorted/ ){
-		print STDERR "    Sorting BAM file\n";
+		print STDOUT "    Sorting BAM file\n";
 		`$samtools sort $bamFile $bamFile.sorted 2> /dev/null`;
 		`mv -f $bamFile.sorted.bam $bamFile 2> /dev/null`;
 	}
@@ -2258,19 +2252,19 @@ sub split_bam_by_chr
 		else{
 			`rm -f $chrBamFile`;
 		}
-		print STDERR $answer;
+		print STDOUT $answer;
 	}
 
 	if( keys %chrFiles ){
 		my $time1   = time;
 		my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
-		print STDERR "  Time elapsed: $elapsed min\n";
+		print STDOUT "  Time elapsed: $elapsed min\n";
 		$self->{'chrFiles'} = \%chrFiles;
 
 		return 1;
 	}
 	else{
-		print STDERR "  Failed splitting BAM file!\n";
+		print STDOUT "  Failed splitting BAM file!\n";
 		return 0;
 	}
 }
@@ -2336,7 +2330,7 @@ sub destroy_file
 	my $self = shift;
 	my $file = $self->{'file'};
 
-	print STDERR "  Removing PEAK file\n";
+	print STDOUT "  Removing PEAK file\n";
 	`rm -f $file`;
 
 	return 1;
@@ -2347,7 +2341,7 @@ sub destroy_files
 	my $self  = shift;
 	my $files = $self->{'chrFiles'};
 
-	print STDERR "  Removing PEAK files split by chromosome\n";
+	print STDOUT "  Removing PEAK files split by chromosome\n";
 	my @files = values %$files;
 	`rm -f @files`;
 
@@ -2374,7 +2368,7 @@ sub call_peaks
 	my $macs2    = $Config->get_value('MACS2');
 	my $extend   = $Config->get_value('PEAK_EXT');
 
-	print STDERR "  Calling peaks ...\n";
+	print STDOUT "  Calling peaks ...\n";
 	my $time0    = time;
 
 	# Call peaks only on nodup BAM file using MACS2
@@ -2396,7 +2390,7 @@ sub call_peaks
 		}
 		else{
 			# Total failure of peak caller MACS2
-			print STDERR "    Failed to call peaks!\n";
+			print STDOUT "    Failed to call peaks!\n";
 			return 0;
 		}
 
@@ -2413,11 +2407,11 @@ sub call_peaks
 	my $numPeaks = _get_number_of_peaks( $peakFile );
 	my $answer   = "    No peaks found!\n";
 	$answer      = "    Total number of peaks = $numPeaks\n" if $numPeaks;
-	print STDERR $answer;
+	print STDOUT $answer;
 
 	my $time1    = time;
 	my $elapsed  = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
-	print STDERR "  Time elapsed: $elapsed min\n";
+	print STDOUT "  Time elapsed: $elapsed min\n";
 
 	return $numPeaks;
 }
@@ -2432,11 +2426,11 @@ sub split_peaks_by_chr
 	my $chroms   = $Config->get_value('CHROMOSOMES');
 	my %chrFiles;
 
-	print STDERR "  Splitting peak file by chromosomes ...\n";
+	print STDOUT "  Splitting peak file by chromosomes ...\n";
 	my $time0 = time;
 
 	if( !-s $peakFile ){
-		print STDERR "    No peak file found!\n";
+		print STDOUT "    No peak file found!\n";
 		return 0;
 	}
 
@@ -2456,19 +2450,19 @@ sub split_peaks_by_chr
 		else{
 			`rm -f $chrPeakFile`;
 		}
-		print STDERR $answer;
+		print STDOUT $answer;
 	}
 
 	my $time1   = time;
 	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
-	print STDERR "  Time elapsed = $elapsed min\n";
+	print STDOUT "  Time elapsed = $elapsed min\n";
 
 	if( keys %chrFiles ){
 		$self->{'chrFiles'} = \%chrFiles;
 		return 1;
 	}
 	else{
-		print STDERR "    No chromosome peak files were found!\n";
+		print STDOUT "    No chromosome peak files were found!\n";
 		return 0;
 	}
 }
@@ -2500,7 +2494,7 @@ sub count_reads_under_peak
 	my $chroms    = $Config->get_value('CHROMOSOMES');
 	my $proc      = $Config->get_value('p');
 
-	print STDERR "  Counting reads under called peaks ...\n";
+	print STDOUT "  Counting reads under called peaks ...\n";
 	my $time0     = time;
 
 	my $pm = new Parallel::ForkManager( $proc );
@@ -2592,7 +2586,7 @@ sub count_reads_under_peak
 				`mv $chrCountFile $chrPeakFile`;
 			}
 			else{
-				print STDERR "    Peak file for chromosome $chr not generated!\n";
+				print STDOUT "    Peak file for chromosome $chr not generated!\n";
 			}
 		}
 		$pm->finish;
@@ -2610,18 +2604,18 @@ sub count_reads_under_peak
 				my $rCount      = `cut -f6 $chrPeakFile | wc -l`; chomp $rCount;
 
 				if( $rCount ){
-					print STDERR "    Number of counted peaks in $chr = $rCount\n";
+					print STDOUT "    Number of counted peaks in $chr = $rCount\n";
 					$chrFiles{$chr} = $chrPeakFile;
 				}
 				else{
-					print STDERR "    No counted peaks in $chr\n";
+					print STDOUT "    No counted peaks in $chr\n";
 				}
 			}
 		}
 	}
 
 	if( ! keys %chrFiles ){
-		print STDERR "    Failed!\n";
+		print STDOUT "    Failed!\n";
 		return 0;
 	}
 	$self->{'chrFiles'} = \%chrFiles;
@@ -2632,11 +2626,11 @@ sub count_reads_under_peak
 	# Report on the total number of reads in all peaks
 	my $totalCount = `cut -f6 $peakFile | paste -sd+ | bc`;
 	chomp $totalCount;
-	print STDERR "    Total number of reads in peaks = $totalCount\n";
+	print STDOUT "    Total number of reads in peaks = $totalCount\n";
 
 	my $time1   = time;
 	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
-	print STDERR "  Time elapsed: $elapsed min\n";
+	print STDOUT "  Time elapsed: $elapsed min\n";
 
 	return 1;
 }
@@ -2679,7 +2673,7 @@ sub destroy_file
 	my $self = shift;
 	my $file = $self->get_file;
 
-	print STDERR "  Removing GENOTYPE file\n";
+	print STDOUT "  Removing GENOTYPE file\n";
 	`rm -f $file`;
 
 	return 1;
@@ -2690,7 +2684,7 @@ sub destroy_files
 	my $self  = shift;
 	my $files = $self->{'chrFiles'};
 
-	print STDERR "  Removing temporary GENOTYPE files\n";
+	print STDOUT "  Removing temporary GENOTYPE files\n";
 	my @files = values %$files;
 	`rm -f @files`;
 
@@ -2715,7 +2709,7 @@ sub load_file
 	my $genFile = shift;
 	my $Config  = $self->{'config'};
 
-	print STDERR "  Extracting GENOTYPE information ...\n";
+	print STDOUT "  Extracting GENOTYPE information ...\n";
 	my $time0   = time;
 
 	die "    Genotyping file not present or empty\n    $genFile\n"
@@ -2725,7 +2719,7 @@ sub load_file
 	chomp $numHets;
 
 	if( $numHets ){
-		print STDERR "    Number of het-SNPs = $numHets\n";
+		print STDOUT "    Number of het-SNPs = $numHets\n";
 	}
 	else{
 		die "    Failed retrieving het-SNPs\n";
@@ -2734,7 +2728,7 @@ sub load_file
 
 	my $time1   = time;
 	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
-	print STDERR "  Time elapsed: $elapsed min\n";
+	print STDOUT "  Time elapsed: $elapsed min\n";
 
 	return 1;
 }
@@ -2749,7 +2743,7 @@ sub split_gen_by_chr
 	my $chroms  = $Config->get_value('CHROMOSOMES');
 	my %chrFiles;
 
-	print STDERR "  Splitting GENOTYPE file into chromosomes ...\n";
+	print STDOUT "  Splitting GENOTYPE file into chromosomes ...\n";
 	my $time0   = time;
 
 	for my $chr ( @$chroms ){
@@ -2765,24 +2759,24 @@ sub split_gen_by_chr
 		chomp $numHets;
 
 		if( $numHets ){
-			print STDERR "    Number of heterozygous positions in $chr = $numHets\n";
+			print STDOUT "    Number of heterozygous positions in $chr = $numHets\n";
 			$chrFiles{$chr} = $chrGenFile;
 		}
 		else{
-			print STDERR "    No heterozygous positions in $chr\n";
+			print STDOUT "    No heterozygous positions in $chr\n";
 			`rm -f $chrGenFile`;
 		}
 	}
 
 	if( ! keys %chrFiles ){
-		print STDERR "    Failed splitting genotyping file!\n";
+		print STDOUT "    Failed splitting genotyping file!\n";
 		return 0;
 	}
 	$self->{'chrFiles'} = \%chrFiles;
 
 	my $time1   = time;
 	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
-	print STDERR "  Time elapsed: $elapsed min\n";
+	print STDOUT "  Time elapsed: $elapsed min\n";
 
 	return 1;
 }
@@ -2814,7 +2808,7 @@ sub filter
 	$base     =~ s/.bed$//;
 	my $time0 = time;
 
-	print STDERR "  Filtering GENOTYPE file ...\n";
+	print STDOUT "  Filtering GENOTYPE file ...\n";
 
 	# Find SNPs within peaks
 	my $tmpGen = "$outDir/filtered.gen";
@@ -2823,16 +2817,16 @@ sub filter
 
 	my $numGen = `cat $tmpGen | wc -l`; chomp $numGen;
 	if( $numGen ){
-		print STDERR "    Heterozygous positions within peaks = $numGen\n";
+		print STDOUT "    Heterozygous positions within peaks = $numGen\n";
 	}
 	else{
-		print STDERR "    No heterozygous positions within called peaks\n";
+		print STDOUT "    No heterozygous positions within called peaks\n";
 		return 0;
 	}
 
 	my $time1   = time;
 	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
-	print STDERR "  Time elapsed: $elapsed min\n";
+	print STDOUT "  Time elapsed: $elapsed min\n";
 
 	return 1;
 }
@@ -2870,7 +2864,7 @@ sub destroy_files
 	my $datFile = $self->{'datFile'};
 	my $aliFile = $self->{'aliFile'};
 
-	 print STDERR "  Removing DAT and ALI files split by chromosome\n";
+	 print STDOUT "  Removing DAT and ALI files split by chromosome\n";
 	`rm -f $datFile $aliFile`;
 
 	return 1;
@@ -2917,7 +2911,7 @@ sub find_allelic_behavior
 		'SNP_STATUS',
 	);
 
-	print STDERR "  Finding ASBs ...\n";
+	print STDOUT "  Finding ASBs ...\n";
 	my $time0 = time;
 
 	# Find ASBs
@@ -3031,7 +3025,7 @@ sub find_allelic_behavior
 		$adbNum = `cat $chr_datFile | wc -l`;
 		chomp $adbNum;
 		$adbNum--; # Do not count the header
-		print STDERR "    Positions with ASB found for $chr = $adbNum\n";
+		print STDOUT "    Positions with ASB found for $chr = $adbNum\n";
 
 		$pm->finish;
 	}
@@ -3048,17 +3042,17 @@ sub find_allelic_behavior
 	chomp $numAllelic;
 
 	if( $numAllelic ){
-		print STDERR "    Total allelic binders = $numAllelic\n";
+		print STDOUT "    Total allelic binders = $numAllelic\n";
 	}
 	else{
-		print STDERR "    No allelic binders found!\n";
+		print STDOUT "    No allelic binders found!\n";
 		`rm -f $datFile`;
 		return 0;
 	}
 
 	my $time1   = time;
 	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
-	print STDERR "  Time elapsed: $elapsed min\n";
+	print STDOUT "  Time elapsed: $elapsed min\n";
 
 	return 1;
 }
@@ -3795,7 +3789,7 @@ sub merge_positions
 	open( ASB1, $iFile ) or
 		die "ERROR: Could not open file $iFile\n";
 
-	print STDERR "  Merging positions ...\n";
+	print STDOUT "  Merging positions ...\n";
 	my $time0 = time;
 
 	# Remove header
@@ -3832,16 +3826,16 @@ sub merge_positions
 	my $num = scalar @data1;
 
 	if( $num > 1 ){
-		print STDERR "    Total number of ASB positions = $num\n";
+		print STDOUT "    Total number of ASB positions = $num\n";
 	}
 	else{
-		print STDERR "    Failed to merge ASB positions!\n";
+		print STDOUT "    Failed to merge ASB positions!\n";
 		return 0;
 	}
 
 	my $time1   = time;
 	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
-	print STDERR "  Time elapsed: $elapsed min\n";
+	print STDOUT "  Time elapsed: $elapsed min\n";
 
 	return 1;
 }
@@ -3909,7 +3903,7 @@ sub add_statistics
 	my $Config    = $self->{'config'};
 	my $statsFile = "$procFile.stats";
 
-	print STDERR "  Adding statistics ...\n";
+	print STDOUT "  Adding statistics ...\n";
 	my $time0  = time;
 
 	# Print header
@@ -3957,18 +3951,18 @@ sub add_statistics
 	close OUT;
 
 	if( $num > 1 && -s $statsFile ){
-		print STDERR "    Number of processed lines = $num\n";
+		print STDOUT "    Number of processed lines = $num\n";
 		`mv $statsFile $procFile`;
 	}
 	else{
-		print STDERR "    Failed to calculate statistics!\n";
+		print STDOUT "    Failed to calculate statistics!\n";
 		`rm -f $statsFile`;
 		return 0;
 	}
 
 	my $time1   = time;
 	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
-	print STDERR "  Time elapsed: $elapsed min\n";
+	print STDOUT "  Time elapsed: $elapsed min\n";
 
 	return 1;
 }
@@ -3981,7 +3975,7 @@ sub add_ars
 	my $Config   = $self->{'config'};
 	my $procTmp  = "$procFile.tmp";
 
-	print STDERR "  Adding ARS scores ...\n";
+	print STDOUT "  Adding ARS scores ...\n";
 	my $time0    = time;
 
 	# Print header
@@ -4097,17 +4091,17 @@ sub add_ars
 	close OUT;
 
 	if( $num > 1 && -s $procTmp ){
-		print STDERR "    Number of processed lines = $num\n";
+		print STDOUT "    Number of processed lines = $num\n";
 		`mv $procTmp $procFile`;
 	}
 	else{
-		print STDERR "    Failed to add AR scores!\n";
+		print STDOUT "    Failed to add AR scores!\n";
 		return 0;
 	}
 
 	my $time1   = time;
 	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
-	print STDERR "  Time elapsed: $elapsed min\n";
+	print STDOUT "  Time elapsed: $elapsed min\n";
 
 	return 1;
 }
@@ -4122,7 +4116,7 @@ sub	add_reference_bases
 	my $bedtools = $Config->get_value( 'BEDTOOLS' );
 	my $refFile  = "$procFile.ref";
 
-	print STDERR "  Annotating reference allele ... \n";
+	print STDOUT "  Annotating reference allele ... \n";
 	my $time0    = time;
 
 	# Generate BED file with base coordinates
@@ -4158,20 +4152,20 @@ sub	add_reference_bases
 	close OUT;
 
 	if( $num > 0 && -s $refFile ){
-		print STDERR "    Number of processed lines = $num\n";
+		print STDOUT "    Number of processed lines = $num\n";
 		`head -n1 $refFile > $procFile`;
 		`tail -n +2 $refFile | sort -Vk1,1 -k2,2n >> $procFile`;
 		`rm -f $refFile $bedFile`;
 	}
 	else{
-		print STDERR "    Failed to add reference bases!\n";
+		print STDOUT "    Failed to add reference bases!\n";
 		`rm -f $refFile`;
 		return 0;
 	}
 
 	my $time1   = time;
 	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
-	print STDERR "  Time elapsed: $elapsed min\n";
+	print STDOUT "  Time elapsed: $elapsed min\n";
 
 	return 1,
 }
@@ -4184,51 +4178,51 @@ sub find_motif_matches
 	my $outDir   = $self->{'outDir'};
 	my $Config   = $self->{'config'};
 
-	print STDERR "  Finding motif matches ...\n";
+	print STDOUT "  Finding motif matches ...\n";
 	my $time0        = time;
 
 	# Load MOTIFS
 	my $motifs  = $self->_load_motifs( $mFiles );
 	if( !$motifs ){
-		print STDERR "    Failed loading motifs!\n";
+		print STDOUT "    Failed loading motifs!\n";
 		return 0;
 	}
 
 	# Extract genomic sequences
-	print STDERR "    Extracting REF sequences\n";
+	print STDOUT "    Extracting REF sequences\n";
 	my $ref_seqs = $self->_extract_ref_sequences;
 	if( !$ref_seqs ){
-		print STDERR "    Failed!\n";
+		print STDOUT "    Failed!\n";
 		return 0;
 	}
 
 	# Print allele sequences to a temporary FASTA file
-	print STDERR "    Building allele sequences\n";
+	print STDOUT "    Building allele sequences\n";
 	my $allele_seqs = $self->_build_allele_sequences( $ref_seqs );
 	if( !$allele_seqs ){
-		print STDERR "    Failed!\n";
+		print STDOUT "    Failed!\n";
 		return 0;
 	}
 
 	# Find MOTIF matches
-	print STDERR "    Finding matches\n";
+	print STDOUT "    Finding matches\n";
 	my $matches = $self->_find_matches( $allele_seqs, $motifs );
 	if( !$matches ){
-		print STDERR "    Failed!\n";
+		print STDOUT "    Failed!\n";
 		return 0;
 	}
 
 	# print_results
-	print STDERR "    Writing results\n";
+	print STDOUT "    Writing results\n";
 	my $status  = $self->_write_match_results( $matches );
 	if( !$status ){
-		print STDERR "    Failed!\n";
+		print STDOUT "    Failed!\n";
 		return 0;
 	}
 
 	my $time1   = time;
 	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
-	print STDERR "  Time elapsed: $elapsed min\n";
+	print STDOUT "  Time elapsed: $elapsed min\n";
 
 	return 1;
 }
@@ -4243,7 +4237,7 @@ sub _load_motifs
 
 	if( -s $mFiles ){
 		open( MAT, $mFiles ) or (
-			print STDERR "    Could not open file: $mFiles at '_load_motifs'\n" and
+			print STDOUT "    Could not open file: $mFiles at '_load_motifs'\n" and
 			return 0
 		);
 
@@ -4515,7 +4509,7 @@ sub _write_match_results
 	my $tmpFile  = "$hitFile.tmp";
 
 	if( scalar @$matches == 0 ){
-		print STDERR "    No motif matches found\n";
+		print STDOUT "    No motif matches found\n";
 		return 0;
 	}
 
@@ -4650,13 +4644,13 @@ sub annotate
 	my $time0    = time;
 
 	if( $value !~ /^(DISEASE|GENE)$/ ){
-		print STDERR "    Could not understand value: $value!\n";
+		print STDOUT "    Could not understand value: $value!\n";
 		return 0;
 	}
-	print STDERR "  Annotating positions with closest $value ... \n";
+	print STDOUT "  Annotating positions with closest $value ... \n";
 
 	if( -s $datBed ){
-		print STDERR "    Annotating DAT file\n";
+		print STDOUT "    Annotating DAT file\n";
 
 		if( $value eq 'DISEASE' ){
 			$self->_annotate_disease( $datBed, $fields );
@@ -4666,7 +4660,7 @@ sub annotate
 		}
 	}
 	elsif( -s $hitBed ){
-		print STDERR "    Annotating HIT file\n";
+		print STDOUT "    Annotating HIT file\n";
 		# Add 10 fields from the hit annotation
 		$fields += 10;
 
@@ -4678,13 +4672,13 @@ sub annotate
 		}
 	}
 	else{
-		print STDERR "    No files to annotate found!\n";
+		print STDOUT "    No files to annotate found!\n";
 		return 0;
 	}
 
 	my $time1   = time;
 	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
-	print STDERR "  Time elapsed: $elapsed min\n";
+	print STDOUT "  Time elapsed: $elapsed min\n";
 
 	return 1;
 }
@@ -4773,12 +4767,12 @@ sub _annotate_disease
 	close OUT;
 
 	if( -s $annoFile ){
-	 	print STDERR "    Diseases annotated succesfully\n";
+	 	print STDOUT "    Diseases annotated succesfully\n";
 		# Rename annotated file
 		`mv -f $annoFile $aBed`;
 	}
 	else{
-	 	print STDERR "    Failed!\n";
+	 	print STDOUT "    Failed!\n";
 		`rm -f $annoFile`;
 		return 0;
 	}
@@ -4870,12 +4864,12 @@ sub _annotate_genes
 	close OUT;
 
 	if( -s $annoFile ){
-	 	print STDERR "    Genes annotated succesfully\n";
+	 	print STDOUT "    Genes annotated succesfully\n";
 		# Rename annotated file
 		`mv -f $annoFile $aBed`;
 	}
 	else{
-	 	print STDERR "    Failed!\n";
+	 	print STDOUT "    Failed!\n";
 		`rm -f $annoFile`;
 		return 0;
 	}
