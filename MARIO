@@ -374,17 +374,6 @@ if( $Config->get_value('D') ){
 	`tail -n +2 $asbFile | sort -nrk15,15 >> $asbFile.sorted`;
 	`mv -f $asbFile.sorted $asbFile`;
 
-	# Copy DAT files to $outDir
-	if( $Config->get_value('SAVE_DAT') ){
-
-		for my $iFile ( @iFiles ){
-			my $sFile = $iFile;
-			$sFile    =~ s/^.*\//$outDir\//;
-			`cp -f $iFile $sFile 2> /dev/null`
-				if !-s $sFile;
-		}
-	}
-
 	# Save ASB file to $outDir
 	my $sFile = $asbFile;
 	$sFile    =~ s/^.*\//$outDir\//;
@@ -767,7 +756,6 @@ SAVE_SRA   = 0  # Save SRA files
 SAVE_FASTQ = 0  # Save FASTQ files
 SAVE_BAM   = 0  # Save alignment files (BAM format)
 SAVE_BED   = 1  # Save peak files (BED format)
-SAVE_DAT   = 1  # Save MARIO's raw output files (DAT format)
 
 
 #-------------------------------------------------------------------------------
@@ -1088,10 +1076,6 @@ sub _configure
 		# Extract config from configuration file
 		_load_configuration_file( $options );
 
-		# if the DAT file is given, make sure it's not erased at the end!
-		$options->{'SAVE_DAT'} = 1;
-		$include{'SAVE_DAT'}   = 1;
-
 		# Require d-group options
 		_require_d_group_options( $options, \%include );
 		_require_n_group_options( $options, \%include )
@@ -1106,21 +1090,23 @@ sub _configure
 		$options->{'a'} = 1;
 		$include{'a'}   = 1;
 
+		# Include all files that may need to be saved
+		$include->{'SAVE_BAM'} = 1;
+		$include->{'SAVE_BED'} = 1;
+
 		# Extract config from configuration file
 		_load_configuration_file( $options );
 
 		# if the BAM file is given, make sure it's not erased at the end!
 		$options->{'SAVE_BAM'} = 1;
-		$include{'SAVE_BAM'}   = 1;
 
 		# Require c-group  options
 		if( $options->{'c'} ){
 			_require_c_group_options( $options, \%include );
 		}
 		elsif( $options->{'B'} ){
-			$include{'B'}        = 1;
-			$include{'SAVE_BED'} = 1;
-			$options{'SAVE_BED'} = 1;
+			$include{'B'}          = 1;
+			$options->{'SAVE_BED'} = 1;
 		}
 
 		# Require d-group options
@@ -1134,12 +1120,16 @@ sub _configure
 		$inputFile    = 'F';
 		$include{'F'} = 1;
 
+		# Include all files that may need to be saved
+		$include->{'SAVE_FASTQ'} = 1;
+		$include->{'SAVE_BAM'}   = 1;
+		$include->{'SAVE_BED'}   = 1;
+
 		# Extract config from configuration file
 		_load_configuration_file( $options );
 
 		# if the FASTQ file is given, make sure it's not erased at the end!
 		$options->{'SAVE_FASTQ'} = 1;
-		$include{'SAVE_FASTQ'}   = 1;
 
 		if( $options->{'q'} ){
 			_require_program( $options, 'FASTQC' );
@@ -1153,9 +1143,9 @@ sub _configure
 			$include{'a'}   = 1;
 		}
 		elsif( $options->{'B'} ){
-			$include{'B'}        = 1;
-			$include{'SAVE_BED'} = 1;
-			$options{'SAVE_BED'} = 1;
+			$include{'B'}          = 1;
+			# if the BED file is given, make sure it's not erased at the end!
+			$options->{'SAVE_BED'} = 1;
 		}
 
 		# Require a-group and/or c-group  options
@@ -1176,12 +1166,17 @@ sub _configure
 		$options->{'f'} = 1;
 		$include{'f'}   = 1;
 
+		# Include all files that may need to be saved
+		$include->{'SAVE_SRA'}   = 1;
+		$include->{'SAVE_FASTQ'} = 1;
+		$include->{'SAVE_BAM'}   = 1;
+		$include->{'SAVE_BED'}   = 1;
+
 		# Extract config from configuration file
 		_load_configuration_file( $options );
 
 		# if the SRA file is given, make sure it's not erased at the end!
 		$options->{'SAVE_SRA'} = 1;
-		$include{'SAVE_SRA'}   = 1;
 
 		# Require f-group options
 		_require_program( $options, 'FASTQDUMP' );
@@ -1193,20 +1188,20 @@ sub _configure
 			$include{'q'}      = 1;
 		}
 
+		if( $options->{'c'} ){
+			_require_c_group_options( $options, \%include );
+			$options->{'a'} = 1;
+			$include{'a'}   = 1;
+		}
+		elsif( $options->{'B'} ){
+			$include{'B'}          = 1;
+			# if the BED file is given, make sure it's not erased at the end!
+			$options->{'SAVE_BED'} = 1;
+		}
+
 		# Require a-group and/or c-group  options
 		if( $options->{'a'} or $options->{'d'} ){
 			_require_a_group_options( $options, \%include );
-
-			if( $options->{'c'} ){
-				_require_c_group_options( $options, \%include );
-			}
-			elsif( $options->{'B'} ){
-				$include{'B'}        = 1;
-				$include{'SAVE_BED'} = 1;
-				$options{'SAVE_BED'} = 1;
-			}
-			$options->{'a'} = 1;
-			$include{'a'}   = 1;
 		}
 
 		# Require d-group options
@@ -1219,6 +1214,12 @@ sub _configure
 	elsif( $options->{'I'} ){
 		$inputFile    = 'I';
 		$include{'I'} = 1;
+
+		# Include all files that may need to be saved
+		$include->{'SAVE_SRA'}   = 1;
+		$include->{'SAVE_FASTQ'} = 1;
+		$include->{'SAVE_BAM'}   = 1;
+		$include->{'SAVE_BED'}   = 1;
 
 		# Require f-group options
 		if( $options->{'f'} or $options->{'a'} or $options->{'d'} ){
@@ -1238,18 +1239,20 @@ sub _configure
 			$include{'f'}   = 1;
 		}
 
+		if( $options->{'c'} ){
+			_require_c_group_options( $options, \%include );
+			$options->{'a'}      = 1;
+			$include{'a'}        = 1;
+		}
+		elsif( $options->{'B'} ){
+			$include{'B'}          = 1;
+			# if the BED file is given, make sure it's not erased at the end!
+			$options->{'SAVE_BED'} = 1;
+		}
+
 		# Require a-group and/or c-group  options
 		if( $options->{'a'} or $options->{'d'} ){
 			_require_a_group_options( $options, \%include );
-
-			if( $options->{'c'} ){
-				_require_c_group_options( $options, \%include );
-			}
-			elsif( $options->{'B'} ){
-				$include{'B'}        = 1;
-				$include{'SAVE_BED'} = 1;
-				$options{'SAVE_BED'} = 1;
-			}
 		}
 
 		# Require d-group options
@@ -1288,6 +1291,7 @@ sub _configure
 		}
 	}
 	print STDERR "\n-------------------------------------------------------------------------------\n";
+	exit;#debug;
 
 	return 1;
 }
@@ -1424,7 +1428,6 @@ sub _require_c_group_options
 	$include->{'PICARD'}      = 1;
 	$include->{'PEAK_EXT'}    = 1;
 	$include->{'c'}           = 1;
-	$include->{'SAVE_BED'}    = 1;
 	$options->{'SAVE_BED'}    = 1;
 
 	return 1;
