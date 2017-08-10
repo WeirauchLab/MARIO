@@ -1091,8 +1091,8 @@ sub _configure
 		$include{'a'}   = 1;
 
 		# Include all files that may need to be saved
-		$include->{'SAVE_BAM'} = 1;
-		$include->{'SAVE_BED'} = 1;
+		$include{'SAVE_BAM'} = 1;
+		$include{'SAVE_BED'} = 1;
 
 		# Extract config from configuration file
 		_load_configuration_file( $options );
@@ -1121,9 +1121,9 @@ sub _configure
 		$include{'F'} = 1;
 
 		# Include all files that may need to be saved
-		$include->{'SAVE_FASTQ'} = 1;
-		$include->{'SAVE_BAM'}   = 1;
-		$include->{'SAVE_BED'}   = 1;
+		$include{'SAVE_FASTQ'} = 1;
+		$include{'SAVE_BAM'}   = 1;
+		$include{'SAVE_BED'}   = 1;
 
 		# Extract config from configuration file
 		_load_configuration_file( $options );
@@ -1167,10 +1167,10 @@ sub _configure
 		$include{'f'}   = 1;
 
 		# Include all files that may need to be saved
-		$include->{'SAVE_SRA'}   = 1;
-		$include->{'SAVE_FASTQ'} = 1;
-		$include->{'SAVE_BAM'}   = 1;
-		$include->{'SAVE_BED'}   = 1;
+		$include{'SAVE_SRA'}   = 1;
+		$include{'SAVE_FASTQ'} = 1;
+		$include{'SAVE_BAM'}   = 1;
+		$include{'SAVE_BED'}   = 1;
 
 		# Extract config from configuration file
 		_load_configuration_file( $options );
@@ -1216,10 +1216,10 @@ sub _configure
 		$include{'I'} = 1;
 
 		# Include all files that may need to be saved
-		$include->{'SAVE_SRA'}   = 1;
-		$include->{'SAVE_FASTQ'} = 1;
-		$include->{'SAVE_BAM'}   = 1;
-		$include->{'SAVE_BED'}   = 1;
+		$include{'SAVE_SRA'}   = 1;
+		$include{'SAVE_FASTQ'} = 1;
+		$include{'SAVE_BAM'}   = 1;
+		$include{'SAVE_BED'}   = 1;
 
 		# Require f-group options
 		if( $options->{'f'} or $options->{'a'} or $options->{'d'} ){
@@ -1291,7 +1291,6 @@ sub _configure
 		}
 	}
 	print STDERR "\n-------------------------------------------------------------------------------\n";
-	exit;#debug;
 
 	return 1;
 }
