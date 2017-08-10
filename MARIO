@@ -1114,7 +1114,14 @@ sub _configure
 		$include{'SAVE_BAM'}   = 1;
 
 		# Require c-group  options
-		_require_c_group_options( $options, \%include );
+		if( $options->{'c'} ){
+			_require_c_group_options( $options, \%include );
+		}
+		elsif( $options->{'B'} ){
+			$include{'B'}        = 1;
+			$include{'SAVE_BED'} = 1;
+			$options{'SAVE_BED'} = 1;
+		}
 
 		# Require d-group options
 		if( $options->{'d'} ){
@@ -1124,10 +1131,8 @@ sub _configure
 		}
 	}
 	elsif( $options->{'F'} ){
-		$inputFile      = 'F';
-		$include{'F'}   = 1;
-		$options->{'a'} = 1;
-		$include{'a'}   = 1;
+		$inputFile    = 'F';
+		$include{'F'} = 1;
 
 		# Extract config from configuration file
 		_load_configuration_file( $options );
@@ -1142,9 +1147,21 @@ sub _configure
 			$include{'q'}      = 1;
 		}
 
+		if( $options->{'c'} ){
+			_require_c_group_options( $options, \%include );
+			$options->{'a'} = 1;
+			$include{'a'}   = 1;
+		}
+		elsif( $options->{'B'} ){
+			$include{'B'}        = 1;
+			$include{'SAVE_BED'} = 1;
+			$options{'SAVE_BED'} = 1;
+		}
+
 		# Require a-group and/or c-group  options
-		_require_a_group_options( $options, \%include );
-		_require_c_group_options( $options, \%include );
+		if( $options->{'a'} or $options->{'d'} ){
+			_require_a_group_options( $options, \%include );
+		}
 
 		# Require d-group options
 		if( $options->{'d'} ){
@@ -1179,7 +1196,15 @@ sub _configure
 		# Require a-group and/or c-group  options
 		if( $options->{'a'} or $options->{'d'} ){
 			_require_a_group_options( $options, \%include );
-			_require_c_group_options( $options, \%include );
+
+			if( $options->{'c'} ){
+				_require_c_group_options( $options, \%include );
+			}
+			elsif( $options->{'B'} ){
+				$include{'B'}        = 1;
+				$include{'SAVE_BED'} = 1;
+				$options{'SAVE_BED'} = 1;
+			}
 			$options->{'a'} = 1;
 			$include{'a'}   = 1;
 		}
@@ -1216,7 +1241,15 @@ sub _configure
 		# Require a-group and/or c-group  options
 		if( $options->{'a'} or $options->{'d'} ){
 			_require_a_group_options( $options, \%include );
-			_require_c_group_options( $options, \%include );
+
+			if( $options->{'c'} ){
+				_require_c_group_options( $options, \%include );
+			}
+			elsif( $options->{'B'} ){
+				$include{'B'}        = 1;
+				$include{'SAVE_BED'} = 1;
+				$options{'SAVE_BED'} = 1;
+			}
 		}
 
 		# Require d-group options
@@ -1381,26 +1414,18 @@ sub _require_c_group_options
 	my $options = shift;
 	my $include = shift;
 
-	if( $options->{'c'} ){
-		_require_program( $options, 'MACS2' );
-		_require_program( $options, 'SAMTOOLS' );
-		_require_file( $options, 'REFGEN_FILE' );
-		$include->{'CHROMOSOMES'} = 1;
-		$include->{'REFGEN_FILE'} = 1;
-		$include->{'SAMTOOLS'}    = 1;
-		$include->{'MACS2'}       = 1;
-		$include->{'PICARD'}      = 1;
-		$include->{'PEAK_EXT'}    = 1;
-		$include->{'c'}           = 1;
-		$include->{'SAVE_BED'}    = 1;
-		$options->{'SAVE_BED'}    = 1;
-	}
-
-	if( $options->{'B'} ){
-		$include->{'B'}        = 1;
-		$include->{'SAVE_BED'} = 1;
-		$options->{'SAVE_BED'} = 1;
-	}
+	_require_program( $options, 'MACS2' );
+	_require_program( $options, 'SAMTOOLS' );
+	_require_file( $options, 'REFGEN_FILE' );
+	$include->{'CHROMOSOMES'} = 1;
+	$include->{'REFGEN_FILE'} = 1;
+	$include->{'SAMTOOLS'}    = 1;
+	$include->{'MACS2'}       = 1;
+	$include->{'PICARD'}      = 1;
+	$include->{'PEAK_EXT'}    = 1;
+	$include->{'c'}           = 1;
+	$include->{'SAVE_BED'}    = 1;
+	$options->{'SAVE_BED'}    = 1;
 
 	return 1;
 }
