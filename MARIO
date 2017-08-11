@@ -1215,11 +1215,22 @@ sub _configure
 		$include{'SAVE_BAM'}   = 1;
 		$include{'SAVE_BED'}   = 1;
 
+		# Extract config from configuration file
+		_load_configuration_file( $options );
+
+		if( $options->{'c'} ){
+			_require_c_group_options( $options, \%include );
+			$options->{'a'}      = 1;
+			$include{'a'}        = 1;
+		}
+		elsif( $options->{'B'} ){
+			$include{'B'}          = 1;
+			# if the BED file is given, make sure it's not erased at the end!
+			$options->{'SAVE_BED'} = 1;
+		}
+
 		# Require f-group options
 		if( $options->{'f'} or $options->{'a'} or $options->{'d'} ){
-			# Extract config from configuration file
-			_load_configuration_file( $options );
-
 			$include{'f'} = 1;
 			_require_program( $options, 'FASTQDUMP' );
 			$include{'FASTQDUMP'} = 1;
@@ -1231,17 +1242,6 @@ sub _configure
 			}
 			$options->{'f'} = 1;
 			$include{'f'}   = 1;
-		}
-
-		if( $options->{'c'} ){
-			_require_c_group_options( $options, \%include );
-			$options->{'a'}      = 1;
-			$include{'a'}        = 1;
-		}
-		elsif( $options->{'B'} ){
-			$include{'B'}          = 1;
-			# if the BED file is given, make sure it's not erased at the end!
-			$options->{'SAVE_BED'} = 1;
 		}
 
 		# Require a-group and/or c-group  options
