@@ -1229,19 +1229,18 @@ sub _configure
 			$options->{'SAVE_BED'} = 1;
 		}
 
+		if( $options->{'q'} ){
+			_require_program( $options, 'FASTQC' );
+			$include{'FASTQC'} = 1;
+			$include{'q'}      = 1;
+			$options->{'f'}    = 1;
+		}
+
 		# Require f-group options
 		if( $options->{'f'} or $options->{'a'} or $options->{'d'} ){
 			$include{'f'} = 1;
 			_require_program( $options, 'FASTQDUMP' );
 			$include{'FASTQDUMP'} = 1;
-
-			if( $options->{'q'} ){
-				_require_program( $options, 'FASTQC' );
-				$include{'FASTQC'} = 1;
-				$include{'q'}      = 1;
-			}
-			$options->{'f'} = 1;
-			$include{'f'}   = 1;
 		}
 
 		# Require a-group and/or c-group  options
@@ -1260,9 +1259,10 @@ sub _configure
 	$self->{'configuration'}{'itype'} = $inputFile;
 
 	# Include common options
-	$include{'O'} = 1;
-	$include{'p'} = 1;
-	$include{'r'} = 1;
+	$options->{'O'} = $options->{'O'} || './';
+	$include{'O'}   = 1;
+	$include{'p'}   = 1;
+	$include{'r'}   = 1;
 
 	print STDOUT "\n\e[1;31mConfiguration:\e[0m\n\n";
 	for my $conf ( keys %$options ){
@@ -1990,6 +1990,7 @@ sub align_to_genome
 	else{
 		my $bowtie2   = $Config->get_value('BOWTIE2');
 		my $log_file  = "$outDir/$base\_bowtie2.log";
+
 		my $modifiers = "--no-unal";
 		my $fastqs    = "-U $fastq1";
 
