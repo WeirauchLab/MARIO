@@ -7,9 +7,9 @@ use Parallel::ForkManager;
 my $progName = $0;
 $progName    =~ s/^.*\///;
 $progName    =~ s/_v(\d+\.\d+)//;
-my $version  = $1 || '3.2';
+my $version  = $1 || '3.3';
 my $created  = '011017';
-my $modified = '080817';
+my $modified = '081117';
 
 my %options;
 # ABCDFGIMOSX
@@ -738,6 +738,8 @@ MOODS_PVAL  = 0.01  # P-value cutoff for the program MOODS (recommended: 0.01)
 MIN_SCORE   = 0.5   # Minimum normalized motif match score to report (it applies to the strong allele)
 
 # Optional configuration parameters
+PEAK_RPKM   = 0.4   # Minimum RPKM value used to remove spurious peaks
+PEAK_WIDTH  = 200   # Minimum peak width used to remove spurious peaks
 PEAK_EXT    = 50    # Number of base pairs to extend called peaks on both sides
                     # MACS2 calls peaks using medium height or something similar, therefore this ensures that peak tails are included
 
@@ -1420,6 +1422,8 @@ sub _require_c_group_options
 	$include->{'MACS2'}       = 1;
 	$include->{'PICARD'}      = 1;
 	$include->{'PEAK_EXT'}    = 1;
+	$include->{'PEAK_RPKM'}   = 1;
+	$include->{'PEAK_WIDTH'}  = 1;
 	$include->{'c'}           = 1;
 	$options->{'SAVE_BED'}    = 1;
 
@@ -2491,6 +2495,9 @@ sub count_reads_under_peak
 	my $outDir    = $self->get_outDir;
 
 	my $Config    = $self->{'config'};
+	my $extend    = $Config->get_value('PEAK_EXT');
+	my $minRpkm   = $Config->get_value('PEAK_RPKM');
+	my $minWidth  = $Config->get_value('PEAK_WIDTH');
 	my $samtools  = $Config->get_value('SAMTOOLS');
 	my $chroms    = $Config->get_value('CHROMOSOMES');
 	my $proc      = $Config->get_value('p');
@@ -2624,9 +2631,13 @@ sub count_reads_under_peak
 	# Concatenate and sort BED files
 	`cat $outDir/chr*_$peakBase.bed | cut -f1-6 | sort -Vk1,1 -k2,2g > $peakFile`;
 
+	# Remove spurious peaks (>= 300 bp in width AND >= 0.4 RPKM)
+	my $totalCount = `cut -f6 $peakFile | paste -sd+ | bc`; chomp $totalCount;
+	$minWidth     += 2 * $extend;
+	`awk '{print \$0,\$3-\$2,\$6/(\$3-\$2)*1000000/$totalCount}' OFS='\\t' $peakFile | awk '{if(\$8>=$minRpkm && \$7>=$minWidth) print \$0}' | sort -Vk1,1 -k2,2n > $peakFile.tmp`;
+	`mv -f $peakFile.tmp $peakFile`;
+
 	# Report on the total number of reads in all peaks
-	my $totalCount = `cut -f6 $peakFile | paste -sd+ | bc`;
-	chomp $totalCount;
 	print STDOUT "    Total number of reads in peaks = $totalCount\n";
 
 	my $time1   = time;
