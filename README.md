@@ -1,8 +1,8 @@
 # MARIO pipeline
 
 The MARIO (Measurement of Allelic Ratio Informatics Operator) pipeline was
-designed to identify Allele-Specific Behavior (ASB) at heterozygous positions
-based on known genotyping information.
+designed to identify Allele-Dependent Behavior (ADB) within a sequencing
+experiment at heterozygous positions identified through genotyping data.
 
 Additionally, the flexible design allows for multiple uses (detailed in diagram
 below).
@@ -125,7 +125,7 @@ _Hint: running `MARIO -h` produces a help screen, which you can then pipe throug
 
     MARIO -cA SRR1.bam,SRR2.bam -C config_3.2.txt
 
-### Find ASBs from BAM files
+### Find ADBs from BAM files
 
     MARIO -dA SRR1.bam,SRR2.bam -C config_3.2.txt -G path_to_genotyping_file/hetpos.txt
 
@@ -141,7 +141,7 @@ _Hint: running `MARIO -h` produces a help screen, which you can then pipe throug
 |     |                               | (c)           |     |
 |     v                               |               v     |
 | +-----[S]       +-----[F]       +-----[A]       +-----[D] |       +=======+       +-----[C]
-| |  SRA  | ----> | FASTQ | ----> |  BAM  | ----> |  DAT  | | ----> |  ASB  | <---- | ANNOT |
+| |  SRA  | ----> | FASTQ | ----> |  BAM  | ----> |  DAT  | | ----> |  ADB  | <---- | ANNOT |
 | +-------+  (f)  +-------+  (a)  +-------+  (d)  +-------+ |       +=======+  (n)  +-------+
 |                    (q)              ^                     |           |
 |                                     |                     |           |
@@ -184,13 +184,13 @@ Priority of input files:
 ```
 -f  Generate FASTQ files from SRA files
 -a  Align FASTQ reads to the genome (generates BAM file)
--d  Find positions with ASBs (allele-specific behavior)
+-d  Find positions with ADBs (allele-dependent behavior)
 
 -B  (optional) Peaks file in BED format
 -O  Name of output folder (all files are saved here)
 -c  Call peaks
 -b  Do not require het-SNPs to fall within peaks
--n  Annotate ASB results
+-n  Annotate ADB results
       It will use the GENANNO_FILE and/or DISANNO_FILE specified in config file
 -p  Number of threads (default: use all available threads)
 -q  Perform quality control on FASTQ files
@@ -202,9 +202,9 @@ Priority of input files:
 ### Output files:
 
 ```
-(ASB) Allele-specific behavior at each heterozygous positions, including
+(ADB) Allele-dependent behavior at each heterozygous positions, including
       reproducibility score (ARS) and annotations
-(HIT) If motif files are given, the ASB file is further annotated with motif
+(HIT) If motif files are given, the ADB file is further annotated with motif
       hits on each heterozygous position
 ```
 
@@ -215,7 +215,7 @@ Priority of input files:
 * Enhanced data input. It creates context-based environment, meaning that
   requires only the minimal amount of inputs, depending on the requested
   operations
-* You can now decide whether to annotate ASB file or not, using the `-n` option
+* You can now decide whether to annotate ADB file or not, using the `-n` option
 
 ### MARIO version 3.1
 
@@ -245,9 +245,10 @@ Please report any issues with the MARIO pipeline (or feature suggestions) in our
 
 ## Authors
 
-| Name              | Email                       | Institution                    |
-|-------------------|-----------------------------|--------------------------------|
-| Dr. Mario Pujato  | mario.pujato -at- cchmc.org | Cincinnati Children's Hospital |
+| Name                 | Email                           | Institution                    |
+|----------------------|---------------------------------|--------------------------------|
+| Dr. Mario Pujato     | Mario.Pujato -at- cchmc.org     | Cincinnati Children's Hospital |
+| Dr. Matthew Weirauch | Matthew.Weirauch -at- cchmc.org | Cincinnati Children's Hospital |
 
 [fastqc]: http://www.bioinformatics.babraham.ac.uk/projects/fastqc/
 [fastqdump]: https://trace.ncbi.nlm.nih.gov/Traces/sra/sra.cgi?view=toolkit_doc&f=fastq-dump
