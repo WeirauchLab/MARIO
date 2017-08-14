@@ -4,8 +4,11 @@ The MARIO (Measurement of Allelic Ratio Informatics Operator) pipeline was
 designed to identify Allele-Dependent Behavior (ADB) within a sequencing
 experiment at heterozygous positions identified through genotyping data.
 
-Additionally, the flexible design allows for multiple uses (detailed in diagram
-below).
+The pipeline's flexible design allows for multiple uses, including downloading
+SRA files from NCBI, quality control on FASTQ files, aligning to a genome using
+three different aligners, etc. (detailed in diagram below).
+
+See also the "Usage examples" section below for specific commands.
 
 ## External dependencies
 
@@ -245,10 +248,9 @@ Please report any issues with the MARIO pipeline (or feature suggestions) in our
 
 ## Authors
 
-| Name                 | Email                           | Institution                    |
-|----------------------|---------------------------------|--------------------------------|
-| Dr. Mario Pujato     | Mario.Pujato -at- cchmc.org     | Cincinnati Children's Hospital |
-| Dr. Matthew Weirauch | Matthew.Weirauch -at- cchmc.org | Cincinnati Children's Hospital |
+| Name              | Email                       | Institution                    |
+|-------------------|-----------------------------|--------------------------------|
+| Dr. Mario Pujato  | mario.pujato -at- cchmc.org | Cincinnati Children's Hospital |
 
 [fastqc]: http://www.bioinformatics.babraham.ac.uk/projects/fastqc/
 [fastqdump]: https://trace.ncbi.nlm.nih.gov/Traces/sra/sra.cgi?view=toolkit_doc&f=fastq-dump
