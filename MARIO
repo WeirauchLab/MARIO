@@ -7,9 +7,9 @@ use Parallel::ForkManager;
 my $progName = $0;
 $progName    =~ s/^.*\///;
 $progName    =~ s/_v(\d+\.\d+)//;
-my $version  = $1 || '3.3';
+my $version  = $1 || '3.2.2';
 my $created  = '011017';
-my $modified = '081117';
+my $modified = '081417';
 
 my %options;
 # ABCDFGIMOSX
@@ -18,7 +18,7 @@ getopts('I:S:F:A:D:M:B:C:X:O:G:p:hfadcqrstnxyz', \%options);
 
 # Display help
 if( ! %options ){
-	MESSAGES::die_with_usage();
+	MESSAGES::die_with_usage( $progName, $version, $created, $modified );
 }
 if( $options{'h'} or ! %options ){
 	MESSAGES::print_usage( $progName, $version, $created, $modified );
@@ -243,17 +243,17 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 		$Config->set_value( 'B', $bFile ) if $bFile;
 		$input = $Alignment->get_file;
 
-		# Find allele-specific behavior (ASBs) if requested
+		# Find allele-dependent behavior (ADBs) if requested
 		#---------------------------------------------------------------------------
 		if( $Config->get_value('d') ){
 			# Find allele-dependent behavior
 			my $base = $input;
 			$base    =~ s/^.*\///;
 			$base    =~ s/.bam$//;
-			# Create directory to deposit ASB file
+			# Create directory to deposit ADB file
 			my $datFile = "$outDir/$base.dat";
 
-			my $AD_behavior = new ASB(
+			my $AD_behavior = new ADB(
 				file   => $datFile,
 				config => $Config,
 				outDir => $outDir,
@@ -276,7 +276,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 			$Genotyping->split_gen_by_chr;
 			my $genFiles = $Genotyping->get_chr_files;
 
-			print STDOUT "Find ASBs at heterozygous positions\n";
+			print STDOUT "Find ADBs at heterozygous positions\n";
 			$AD_behavior->find_allelic_behavior( $Alignment, $genFiles );
 
 			# Save BAM file (no longer in use)
@@ -315,7 +315,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 		push( @datFiles, $input );
 	}
 }
-# Exit the program if ASBs were NOT requested
+# Exit the program if ADBs were NOT requested
 exit if !$Config->get_value('d');
 
 # Save DAT files
@@ -342,10 +342,10 @@ if( $Config->get_value('D') ){
 
 	# Make a selection based on given config
 	print STDOUT "Merge allele-dependent candidate SNPs\n";
-	my $asbFile = "$outDir/results.asb";
+	my $adbFile = "$outDir/results.adb";
 
 	my $Postprocess = new POSTPROCESSING(
-		file   => $asbFile,
+		file   => $adbFile,
 		config => $Config,
 		outDir => $outDir,
 	);
@@ -369,14 +369,14 @@ if( $Config->get_value('D') ){
 	print STDOUT "\e[0;32m[ DONE ]\e[0m\n";
 
 	# Sort files in descending order by ARS values
-	`head -n1 $asbFile > $asbFile.sorted`;
-	`tail -n +2 $asbFile | sort -nrk15,15 >> $asbFile.sorted`;
-	`mv -f $asbFile.sorted $asbFile`;
+	`head -n1 $adbFile > $adbFile.sorted`;
+	`tail -n +2 $adbFile | sort -nrk15,15 >> $adbFile.sorted`;
+	`mv -f $adbFile.sorted $adbFile`;
 
-	# Save ASB file to $outDir
-	my $sFile = $asbFile;
+	# Save ADB file to $outDir
+	my $sFile = $adbFile;
 	$sFile    =~ s/^.*\//$outDir\//;
-	`cp -f $asbFile $sFile 2> /dev/null`;
+	`cp -f $adbFile $sFile 2> /dev/null`;
 
 	if( $Config->get_value('M') ){
 		# Save HIT file to $outDir
@@ -468,7 +468,22 @@ use strict;
 
 sub die_with_usage
 {
-	die "\n\e[0;31mUse option -h for help\e[0m\n\n";
+	my $progName = shift;
+	my $version  = shift;
+	my $created  = shift;
+	my $modified = shift;
+
+	die"
+\n\e[0;33m================================================================================\e[0m
+
+\e[0;33mMARIO (Measurement of Allelic Ratio Informatics Operator) pipeline\e[0m
+
+\e[0;33mVersion:    $version\e[0m
+\e[0;33mWritten by: Mario Pujato
+
+\e[0;33m================================================================================\e[0m
+
+\e[1;31mUse option -h for help\e[0m\n\n";
 }
 
 sub print_usage
@@ -479,19 +494,17 @@ sub print_usage
 	my $modified = shift;
 	#getopts('I:S:1:2:B:D:b:p:C:h', \%options);
 
-	print STDOUT
-"\e[0;36m--------------------------------------------------------------------------------\e[0m
-\e[0;36m>> Created by Mario Pujato <<
+	print STDOUT "
+\e[0;33m================================================================================\e[0m
 
-\e[0;36mCreated:  $created\e[0m
-\e[0;36mModified: $modified\e[0m
-\e[0;36mVersion:  $version\e[0m
+\e[0;33mMARIO (Measurement of Allelic Ratio Informatics Operator) pipeline\e[0m
 
-\e[0;36m================================================================================\e[0m
-\e[0;33mIdentify Allele-Specific Behavior (ASB) at\e[0m
-\e[0;33mheterozygous positions from sequencing data\e[0m
+\e[0;33mVersion:    $version\e[0m
+\e[0;33mWritten by: Mario Pujato
 
-\e[1;33mUSAGE: $progName [options] <arguments>\e[0m\n
+\e[0;33m================================================================================\e[0m
+
+\e[1;33mUSAGE: $progName [options] <arguments>\e[0m
 
   [options]
 
@@ -510,7 +523,7 @@ sub print_usage
             Duplicate reads will be removed unless the -r option is set
       -D  DAT files. Comma-separated list
             This is the raw output of the MARIO pipeline (one per BAM file)
-            Given these files, the pipeline will score and annotate the ASB
+            Given these files, the pipeline will score and annotate the ADB
             predictions
 
       -X  Path to index files (STAR, HISAT2 and BOWTIE2 are supported)
@@ -542,10 +555,10 @@ sub print_usage
 
       -f  Generate FASTQ files from SRA files
       -a  Align FASTQ files to genome
-      -d  Find and report ASBs
+      -d  Find and report ADBs
       -c  Call peaks from BAM file
       -q  Perform quality control of raw-reads (for each FASTQ file)
-      -n  Annotate ASB results
+      -n  Annotate ADB results
             It will use the GENANNO_FILE and/or DISANNO_FILE specified in the configuration file
 
       -r  Retain duplicate reads in BAM output
@@ -557,7 +570,7 @@ sub print_usage
       -y  Generate a default configuration file
       -z  Generate a default Allelic reproducibility score (ARS) file
 
-\e[0;36m--------------------------------------------------------------------------------\e[0m\n\n";
+\e[0;33m================================================================================\e[0m\n\n";
 
 	return 1;
 }
@@ -567,29 +580,37 @@ sub print_scheme
 	my $progName = shift;
 	my $version  = shift;
 
-	print "\nScheme of $progName version $version pipeline
+	print "
+\e[0;33m================================================================================\e[0m
+
+\e[0;33mScheme of the MARIO pipeline\e[0m
+
+\e[0;33mVersion:    $version\e[0m
+\e[0;33mWritten by: Mario Pujato
+
+\e[0;33m================================================================================\e[0m
 
 The pipeline can be used to start and/or generate any intermediate file in the scheme.
 
-+-----------------------------------------------------------+
-|                                                           |
-| +-----[I]                       +-----[B]       +-----[G] |
-| | SRAID |                       |  BED  | ----> |  GEN  | |
-| +-------+                       +-------+  (b)  +-------+ |
-|     |                               ^               |     | 
-|     |                               | (c)           |     |
-|     v                               |               v     |
-| +-----[S]       +-----[F]       +-----[A]       +-----[D] |       +=======+       +-----[C]
-| |  SRA  | ----> | FASTQ | ----> |  BAM  | ----> |  DAT  | | ----> |  ASB  | <---- | ANNOT |
-| +-------+  (f)  +-------+  (a)  +-------+  (d)  +-------+ |       +=======+  (n)  +-------+
-|                    (q)              ^                     |           |
-|                                     |                     |           |
-|                                     |                     |           v
-|                                 +-----[X]                 |       +=======+       +-----[M]
-|                                 | INDEX |                 |       |  HIT  | <---- | MOTIF |
-|                                 +-------+                 |       +=======+       +-------+
-|                                                           |
-+-----------------------------------------------------------+
+\e[1;32m+-----------------------------------------------------------+\e[0m
+\e[1;32m|                                                           |\e[0m
+\e[1;32m| +-----[I]                       +-----[B]       +-----[G] |\e[0m
+\e[1;32m| | SRAID |                       |  BED  | ----> |  GEN  | |\e[0m
+\e[1;32m| +-------+                       +-------+  (b)  +-------+ |\e[0m
+\e[1;32m|     |                               ^               |     | \e[0m
+\e[1;32m|     |                               | (c)           |     |\e[0m
+\e[1;32m|     v                               |               v     |\e[0m
+\e[1;32m| +-----[S]       +-----[F]       +-----[A]       +-----[D] |       +=======+       +-----[C]\e[0m
+\e[1;32m| |  SRA  | ----> | FASTQ | ----> |  BAM  | ----> |  DAT  | | ----> |  ADB  | <---- | ANNOT |\e[0m
+\e[1;32m| +-------+  (f)  +-------+  (a)  +-------+  (d)  +-------+ |       +=======+  (n)  +-------+\e[0m
+\e[1;32m|                    (q)              ^                     |           |\e[0m
+\e[1;32m|                                     |                     |           |\e[0m
+\e[1;32m|                                     |                     |           v\e[0m
+\e[1;32m|                                 +-----[X]                 |       +=======+       +-----[M]\e[0m
+\e[1;32m|                                 | INDEX |                 |       |  HIT  | <---- | MOTIF |\e[0m
+\e[1;32m|                                 +-------+                 |       +=======+       +-------+\e[0m
+\e[1;32m|                                                           |\e[0m
+\e[1;32m+-----------------------------------------------------------+\e[0m
 
 Input files:
 
@@ -617,13 +638,13 @@ Priority of input files:
 
 -f  Generate FASTQ files from SRA files
 -a  Align FASTQ reads to the genome (generates BAM file)
--d  Find positions with ASBs (allele-specific behavior)
+-d  Find positions with ADBs (allele-dependent behavior)
 
 -B  (optional) Peaks file in BED format
 -O  Name of output folder (all files are saved here)
 -c  Call peaks
 -b  Do not require het-SNPs to fall within peaks
--n  Annotate ASB results
+-n  Annotate ADB results
       It will use the GENANNO_FILE and/or DISANNO_FILE specified in the configuration file
 -p  Number of threads (default: use all available threads)
 -q  Perform quality control on FASTQ files
@@ -632,9 +653,9 @@ Priority of input files:
 -t  Input data is RNA-seq (HISAT2 alignment)
 
 Output files:
-(ASB) Allele-specific behavior at each heterozygous positions, including
+(ADB) Allele-dependent behavior at each heterozygous positions, including
       reproducibility score (ARS) and annotations
-(HIT) If motif files are given, the ASB file is further annotated with motif
+(HIT) If motif files are given, the ADB file is further annotated with motif
       hits on each heterozygous position
 
 Examples:
@@ -663,9 +684,10 @@ Examples:
   Call peaks on BAM files
     > MARIO -cA SRR1.bam,SRR2.bam -C config_3.2.txt
 
-  Find ASBs from BAM files
+  Find ADBs from BAM files
     > MARIO -dA SRR1.bam,SRR2.bam -C config_3.2.txt -G path_to_genotyping_file/hetpos.txt
-\n";
+
+\e[0;33m================================================================================\e[0m\n\n";
 
 	return 1;
 }
@@ -727,9 +749,9 @@ CHROMOSOMES = chr1,chr2,chr3,chr4,chr5,chr6,chr7,chr8,chr9,chr10,chr11,chr12,chr
 # Zebrafish
 #CHROMOSOMES = chr1,chr2,chr3,chr4,chr5,chr6,chr7,chr8,chr9,chr10,chr11,chr12,chr13,chr14,chr15,chr16,chr17,chr18,chr19,chr20,chr21,chr22,chr23,chr24,chr25
 
-# ASB (Allele-Specific Behavior) configuration parameters:
-S_READS_CF  = 5     # Minimum number of reads (strong reads) to filter out ASB results
-W_READS_CF  = 30    # Minimum number of reads (weak reads) to filter out ASB results when no genotyping information is available
+# ADB (Allele-Dependent Behavior) configuration parameters:
+S_READS_CF  = 5     # Minimum number of reads (strong reads) to filter out ADB results
+W_READS_CF  = 30    # Minimum number of reads (weak reads) to filter out ADB results when no genotyping information is available
 
 # Motif searching configuration parameters:
 SNP_PADD    = 20    # Number of base pairs to consider at each side of a SNP for motif searching
@@ -2844,7 +2866,7 @@ sub filter
 }
 
 #-------------------------------------------------------------------------------
-package ASB;
+package ADB;
 use base 'FILE';
 use warnings;
 use strict;
@@ -2853,7 +2875,7 @@ sub new
 {
 	my $class     = shift;
 	my %arguments = @_;
-    my $asbFile   = $arguments{'file'};
+    my $adbFile   = $arguments{'file'};
     my $outDir    = $arguments{'outDir'}    or
 		die "ERROR: Please provide an argument for 'outDir'\n";
     my $Config    = $arguments{'config'} or
@@ -2861,7 +2883,7 @@ sub new
 
 	# Constructor
 	my $self = SUPER::new $class(
-	 	file   => $asbFile,
+	 	file   => $adbFile,
 		outDir => $outDir,
 	);
 	$self->{'config'} = $Config;
@@ -2923,10 +2945,10 @@ sub find_allelic_behavior
 		'SNP_STATUS',
 	);
 
-	print STDOUT "  Finding ASBs ...\n";
+	print STDOUT "  Finding ADBs ...\n";
 	my $time0 = time;
 
-	# Find ASBs
+	# Find ADBs
 	my $pm = new Parallel::ForkManager( $proc );
 
 	for my $chr ( @$chroms ){
@@ -3037,7 +3059,7 @@ sub find_allelic_behavior
 		$adbNum = `cat $chr_datFile | wc -l`;
 		chomp $adbNum;
 		$adbNum--; # Do not count the header
-		print STDOUT "    Positions with ASB found for $chr = $adbNum\n";
+		print STDOUT "    Positions with ADB found for $chr = $adbNum\n";
 
 		$pm->finish;
 	}
@@ -3771,7 +3793,7 @@ sub new
     my $Config    = $arguments{'config'} or
 		die "ERROR: Please provide an argument for 'config'\n";
 	my $hitFile   = $file;
-	$hitFile      =~ s/\.asb$/.hit/;
+	$hitFile      =~ s/\.adb$/.hit/;
 
 	# Constructor
 	my $self = SUPER::new $class(
@@ -3796,29 +3818,29 @@ sub merge_positions
 	my $self  = shift;
 	my $files = shift;
 
-	# Merge ASB data
+	# Merge ADB data
 	my $iFile = shift @$files;
-	open( ASB1, $iFile ) or
+	open( ADB1, $iFile ) or
 		die "ERROR: Could not open file $iFile\n";
 
 	print STDOUT "  Merging positions ...\n";
 	my $time0 = time;
 
 	# Remove header
-	my $header1 = <ASB1>;
+	my $header1 = <ADB1>;
 	chomp $header1;
-	my @data1   = <ASB1>;
+	my @data1   = <ADB1>;
 	chomp @data1;
-	close ASB1;
+	close ADB1;
 
 	for my $iFile ( @$files ){
-		open( ASB2, $iFile ) or
+		open( ADB2, $iFile ) or
 			die "ERROR: Could not open file $iFile\n";
 		# Remove header
-		my $header2 = <ASB2>;
-		my @data2   = <ASB2>;
+		my $header2 = <ADB2>;
+		my @data2   = <ADB2>;
 		chomp @data2;
-		close ASB2;
+		close ADB2;
 		@data1      = _merge( \@data1, \@data2 );
 	}
 
@@ -3838,10 +3860,10 @@ sub merge_positions
 	my $num = scalar @data1;
 
 	if( $num > 1 ){
-		print STDOUT "    Total number of ASB positions = $num\n";
+		print STDOUT "    Total number of ADB positions = $num\n";
 	}
 	else{
-		print STDOUT "    Failed to merge ASB positions!\n";
+		print STDOUT "    Failed to merge ADB positions!\n";
 		return 0;
 	}
 
@@ -4652,7 +4674,7 @@ sub annotate
 	my $datBed   = $self->get_file;
 	my $hitBed   = $self->get_hitFile;
 	my $outDir   = $self->get_outDir;
-	my $fields   = 15; # Number of fields in ASB file without annotation
+	my $fields   = 15; # Number of fields in ADB file without annotation
 	my $time0    = time;
 
 	if( $value !~ /^(DISEASE|GENE)$/ ){
