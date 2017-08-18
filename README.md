@@ -89,30 +89,23 @@ in the local::lib documentation.
 _Hint: running `MARIO -h` produces a help screen, which you can then pipe through
 `less`._
 
-### Download SRA file from NCBI based on SRR ID
-
-(_Note: the downloaded SRA file is 89Mb in size_)
-
-    MARIO -I SRR1608989
-    MARIO -I SRR1608989,SRR1608990   # (downloads two SRA files: 89 MB and 99 MB)
-
 ### Download and generate FASTQ files from SRR ID
 
-    MARIO -fI SRR1608989 -C config_3.2.txt
+    MARIO -I SRR1608989 -C config_3.2.txt
 
 ### ChIP-seq experiments or similar:
 
 #### Align FASTQ reads to hg19 genome (starting from downloaded SRA file)
 
-    MARIO -aS SRR1608989.sra -C config_3.2.txt -X path_to_BOWTIE2_aligner_index_files/hg19
+    MARIO -aI SRR1608989.sra -C config_3.2.txt -X path_to_BOWTIE2_aligner_index_files/hg19
 
 ### RNA-seq experiments:
 
 #### Align FASTQ reads to hg19 genome (starting from downloaded SRA file)
 
-    MARIO -aS SRR1608989.sra -C config_3.2.txt -sX path_to_STAR_aligner_index_files
+    MARIO -aI SRR1608989.sra -C config_3.2.txt -sX path_to_STAR_aligner_index_files
     
-    MARIO -aS SRR1608989.sra -C config_3.2.txt -tX path_to_HISAT2_aligner_index_files/hg19
+    MARIO -aI SRR1608989.sra -C config_3.2.txt -tX path_to_HISAT2_aligner_index_files/hg19
 
 ### Align to genome using paired-end reads
 
