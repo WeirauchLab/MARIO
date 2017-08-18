@@ -259,11 +259,14 @@ _The corresponding journal article is still under review._
 Please report any issues with the MARIO pipeline (or feature suggestions) in our
 [GitHub issue tracker][gi].
 
-## Authors
+With other questions, you may contact [Dr. Pujato][mario] (the primary author
+of MARIO) or [Dr. Weirauch][matt] via email.
 
-| Name              | Email                       | Institution                    |
-|-------------------|-----------------------------|--------------------------------|
-| Dr. Mario Pujato  | mario.pujato -at- cchmc.org | Cincinnati Children's Hospital |
+## Contributors
+
+| Name              | Institution                    | Remarks
+|-------------------|--------------------------------|--------
+| Dr. Mario Pujato  | Cincinnati Children's Hospital | _primary author_
 
 [fastqc]: http://www.bioinformatics.babraham.ac.uk/projects/fastqc/
 [fastqdump]: https://trace.ncbi.nlm.nih.gov/Traces/sra/sra.cgi?view=toolkit_doc&f=fastq-dump
@@ -285,3 +288,5 @@ Please report any issues with the MARIO pipeline (or feature suggestions) in our
 [mojo]: https://github.com/kraih/mojo/wiki/Dreamhost#configuring-perl-with-locallib
 [llboot]: https://metacpan.org/pod/local::lib#The-bootstrapping-technique
 [gi]: https://github.com/WeirauchLab/MARIO/issues
+[mario]: mailto:Mario.Pujato%20-at-%20cchmc.org?subject=MARIO%20feedback&body=(don't%20forget%20to%20change%20%22-at-%22%20to%20%22%40%22%20before%20sending!)
+[matt]: mailto:Matthew.Weirauch%20-at-%20cchmc.org?subject=MARIO%20feedback&body=(don't%20forget%20to%20change%20%22-at-%22%20to%20%22%40%22%20before%20sending!)
