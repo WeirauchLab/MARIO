@@ -135,32 +135,31 @@ _Hint: running `MARIO -h` produces a help screen, which you can then pipe throug
 ## Scheme of the MARIO pipeline
 
 ```
-+-----------------------------------------------------------+
-|                                                           |
-| +-----[I]                       +-----[B]       +-----[G] |
-| | SRAID |                       |  BED  | ----> |  GEN  | |
-| +-------+                       +-------+  (b)  +-------+ |
-|     |                               ^               |     | 
-|     |                               | (c)           |     |
-|     v                               |               v     |
-| +-----[S]       +-----[F]       +-----[A]       +-----[D] |       +=======+       +-----[C]
-| |  SRA  | ----> | FASTQ | ----> |  BAM  | ----> |  DAT  | | ----> |  ADB  | <---- | ANNOT |
-| +-------+  (f)  +-------+  (a)  +-------+  (d)  +-------+ |       +=======+  (n)  +-------+
-|                    (q)              ^                     |           |
-|                                     |                     |           |
-|                                     |                     |           v
-|                                 +-----[X]                 |       +=======+       +-----[M]
-|                                 | INDEX |                 |       |  HIT  | <---- | MOTIF |
-|                                 +-------+                 |       +=======+       +-------+
-|                                                           |
-+-----------------------------------------------------------+
++-------------------------------------------+
+|                                           |
+| +-----[I]       +-----[B]       +-----[G] |
+| | SRAID |       |  BED  | ----> |  GEN  | |
+| +-------+       +-------+  (b)  +-------+ |
+|     |               ^               |     | 
+|     |               | (c)           |     |
+|     v               |               v     |
+| +-----[F]       +-----[A]       +-----[D] |       +=======+       +-----[C]
+| | FASTQ | ----> |  BAM  | ----> |  DAT  | | ----> |  ADB  | <---- | ANNOT |
+| +-------+  (a)  +-------+  (d)  +-------+ |       +=======+  (n)  +-------+
+|    (q)              ^                     |           |
+|                     |                     |           |
+|                     |                     |           v
+|                 +-----[X]                 |       +=======+       +-----[M]
+|                 | INDEX |                 |       |  HIT  | <---- | MOTIF |
+|                 +-------+                 |       +=======+       +-------+
+|                                           |
++-------------------------------------------+
 ```
 
 ### Input files:
 
 ```
 -I  SRA ID (i.e. SRR1608989 )
--S  SRA file (i.e. SRR1608989.sra)
 -F  Fastq file (paired-end reads should be separated with \":\", like: FQ1:FQ2)
 -A  Alignment file (BAM format)
 -D  DAT file (first ouput of the MARIO pipeline containing raw allelic counts)
@@ -185,7 +184,6 @@ Priority of input files:
 ### Optional parameters:
 
 ```
--f  Generate FASTQ files from SRA files
 -a  Align FASTQ reads to the genome (generates BAM file)
 -d  Find positions with ADBs (allele-dependent behavior)
 
@@ -205,15 +203,30 @@ Priority of input files:
 ### Output files:
 
 ```
+(BED) If the -c option is given, MACS2 called peaks are produced as a BED file.
+      The BED file has 4 additional columns (6 through 9):
+        6. Number of reads under the peak
+        7. RPKM, measured as the number of reads divided by the peak width,
+            multiplied by 1,000,000 divided by the total number of reads under
+            all peaks
+        8. TIER1 flag. If 1, the peak passed the minimum RPKM requirement of
+            0.4
+        9. TIER2 flag. If 1, the peak passed the minimum peak width requirement
+            of 200bp
 (ADB) Allele-dependent behavior at each heterozygous positions, including
-      reproducibility score (ARS) and annotations
+      reproducibility score (ARS) and annotations.
 (HIT) If motif files are given, the ADB file is further annotated with motif
-      hits on each heterozygous position
+      hits on each heterozygous position.
 ```
 
 ## Change log:
 
-### MARIO version 3.2
+### MARIO version 3.3.0
+
+* It can now annotate the DAT file with multiple arbitrary bed files
+* Fixed input logic problems
+
+### MARIO version 3.2.2
 
 * Enhanced data input. It creates context-based environment, meaning that
   requires only the minimal amount of inputs, depending on the requested

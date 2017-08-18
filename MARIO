@@ -7,14 +7,14 @@ use Parallel::ForkManager;
 my $progName = $0;
 $progName    =~ s/^.*\///;
 $progName    =~ s/_v(\d+\.\d+)//;
-my $version  = $1 || '3.2.2';
+my $version  = $1 || '3.3.0';
 my $created  = '011017';
-my $modified = '081417';
+my $modified = '081617';
 
 my %options;
 # ABCDFGIMOSX
 # abcdfhnpqrstxyz
-getopts('I:S:F:A:D:M:B:C:X:O:G:p:hfadcqrstnxyz', \%options);
+getopts('I:F:A:D:M:B:C:X:O:G:p:hfabdcqorstumxyz', \%options);
 
 # Display help
 if( ! %options ){
@@ -55,14 +55,12 @@ my $time0 = time;
 
 # Processing input files
 #-------------------------------------------------------------------------------
-=pod
 # Inputs:
-I SRA_ID
-S SRA
-F FASTQ_read1:2 FASTQ_read2
-A BAM
-D DAT
-=cut
+# I SRA_ID
+# S SRA
+# F FASTQ_read1:2 FASTQ_read2
+# A BAM
+# D DAT
 
 # Get input type together with correct files
 #-------------------------------------------------------------------------------
@@ -79,222 +77,70 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 	my $input = $inputs[$i-1];
 	my $bFile = $bedFiles->[$i-1] || 0;
 	print STDOUT "\n>> Processing input \'$itype\' ($i/$iNum)\n";
-	print STDOUT "  > $input\n\n";
 
-	# Download SRA files from NCBI
 	#-------------------------------------------------------------------------------
-	if( $Config->get_value('I') ){
-		print STDOUT "Retrieving SRA file from NCBI's server\n";
-		print STDOUT "  > $input\n";
-
-		my $Sra = new SRA(
-			sra_id => $input,
-			config => $Config,
-			outDir => $outDir,
-		);
-		$Sra->download;
-
-		$input = $Sra->get_file;
-		$Config->set_value( 'S', $input );
-
-		print STDOUT "\e[0;32m[ DONE ]\e[0m\n";
-	}
-	# Continue if FASTQ files were requested
-	next unless(
-		$Config->get_value('f') or
-		$Config->get_value('a') or
-		$Config->get_value('d')
-	);
-
 	# Create FASTQ files from SRA files
 	#-------------------------------------------------------------------------------
-	my $qFlag = 0;
-	if( $Config->get_value('S') ){
-		print STDOUT "Generate FASTQ file from SRA file\n";
+	$Config->set_value( 'QC', 0 ); # Quality control on raw reads flag
+
+	if( $Config->get_value('I') ){
+		print STDOUT "Processing SRA\n";
 		print STDOUT "  > $input\n";
 
-		my $Fastq = new FASTQ(
-			config => $Config,
-			outDir => $outDir,
-		);
-		$Fastq->generate( $input );
-
-		if( $Config->get_value('q') ){
-			$Fastq->quality_control;
-			$qFlag = 1;
-		}
-
-		# Save SRA file (no longer in use)
-		if( !$Config->get_value('SAVE_SRA') ){
-			`rm -f $input 2> /dev/null`;
-		}
-		my $fastq1 = $Fastq->get_file1;
-		my $fastq2 = $Fastq->get_file2;
-
-		if( $fastq2 ){
-			$input = "$fastq1:$fastq2";
-		}
-		else{
-			$input = $fastq1;
-		}
-		$Config->set_value( 'F', $input );
+		$input = process_sra( $input, $Config );
 
 		print STDOUT "\e[0;32m[ DONE ]\e[0m\n";
-
 	}
 	# Continue if BAM files were requested
 	next unless(
-		$Config->get_value('a') or
-		$Config->get_value('d')
+		$Config->get_value('a')
 	);
 
+	#-------------------------------------------------------------------------------
 	# Align reads to genome
 	#-------------------------------------------------------------------------------
-	my $rFlag;
+	$Config->set_value( 'DP', 0 ); # Remove duplicate reads flag
+
 	if( $Config->get_value('F') ){
-		print STDOUT "Align reads to reference genome\n";
+		print STDOUT "Processing FASTQ file\n";
 
-		my @jFiles = split( ':', $input );
-		my $jFile1 = $jFiles[0];
-		my $jFile2 = $jFiles[1];
-
-		print STDOUT "  > $jFile1\n";
-		print STDOUT "  > $jFile2\n" if $jFile2;
-
-		my $Fastq = new FASTQ(
-			config => $Config,
-			outDir => $outDir,
-		);
-		$Fastq->set_file1( $jFile1 );
-		$Fastq->set_file2( $jFile2 ) if $jFile2;
-
-		if( $Config->get_value('q') and ! $qFlag ){
-			$Fastq->quality_control;
-		}
-
-		# Align reads to genome
-		my $Alignment = new ALIGNMENT(
-			fastq  => $Fastq,
-			config => $Config,
-			outDir => $outDir,
-		);
-		$Alignment->align_to_genome;
-
-		if( !$Config->get_value('r') ){
-			$Alignment->remove_duplicates;
-			$rFlag = 1;
-		}
-
-		# Save FASTQ files (no longer in use)
-		if( !$Config->get_value('SAVE_FASTQ') ){
-			`rm -f $jFile1 2> /dev/null`;
-			`rm -f $jFile2 2> /dev/null` if $jFile2;
-		}
-		$input = $Alignment->get_file;
-		$Config->set_value( 'A',  $input );
+		my $Fastq = load_fastq_file( $input, $Config );
+		$input    = process_fastq_file( $Fastq, $Config );
 
 		print STDOUT "\e[0;32m[ DONE ]\e[0m\n";
 	}
+	# Continue if BAM files were requested
+	next unless(
+		$Config->get_value('B') or
+		$Config->get_value('c')
+	);
 
-	# Take BAM file as input and call peaks if no BED file is provided or it's not requested
 	#-------------------------------------------------------------------------------
-	my $sFlag;
+	# Take BAM file as input
+	#-------------------------------------------------------------------------------
+	$Config->set_value( 'SP', 0 ); # Split BAM by chromosomes flag
+
 	if( $Config->get_value('A') ){
 		# Index and split BAM file by chromosomes
-		print STDOUT "Index and split BAM file\n";
+		print STDOUT "Processing BAM file\n";
 		print STDOUT "  > $input\n";
 
-		my $Alignment = new ALIGNMENT(
-			bamFile => $input,
-			config  => $Config,
-			outDir  => $outDir,
-		);
-		if( !$Config->get_value('r') and !$rFlag ){
-			$Alignment->remove_duplicates;
-		}
+		my $Alignment = process_bam_file( $input, $Config, $bFile );
 
-		if( $Config->get_value('c') and ! $bFile ){
-			# Call peaks with MACS2
-			print STDOUT "Call peaks from BAM file\n";
-			print STDOUT "  > $input\n";
-
-			# Split BAM file y chromosomes
-			$Alignment->split_bam_by_chr;
-			$sFlag = 1;
-
-			my $Peaks = new PEAKS(
-				bamFile => $Alignment->get_file,
-				config  => $Config,
-				outDir  => $outDir,
-			);
-			$Peaks->call_peaks;
-			$Peaks->split_peaks_by_chr;
-			# Count reads under peaks using chrom-split BAM files
-			$Peaks->count_reads_under_peak( $Alignment->get_chr_files );
-
-			# Save BED files
-			$bFile = $Peaks->get_file;
-			if( !$Config->get_value('SAVE_BED') ){
-				`rm -f $bFile 2> /dev/null`;
-			}
-			# Remove per chromosome BED files (no longer used)
-			`rm -f $outDir/chr*.bed 2> /dev/null`;
-		}
-		$Config->set_value( 'B', $bFile ) if $bFile;
-		$input = $Alignment->get_file;
-
+		#---------------------------------------------------------------------------
 		# Find allele-dependent behavior (ADBs) if requested
 		#---------------------------------------------------------------------------
 		if( $Config->get_value('d') ){
-			# Find allele-dependent behavior
-			my $base = $input;
-			$base    =~ s/^.*\///;
-			$base    =~ s/.bam$//;
-			# Create directory to deposit ADB file
-			my $datFile = "$outDir/$base.dat";
+			print STDOUT "Finding allelic behavior\n";
+			print STDOUT "  > $input\n";
 
-			my $AD_behavior = new ADB(
-				file   => $datFile,
-				config => $Config,
-				outDir => $outDir,
-			);
+			my $genFiles = load_genotype( $Config, $bFile );
+			$input       = process_allelic_behavior( $Alignment, $Config, $genFiles );
 
-			# Filter SNPs within peaks and split by chromosome
-			# if genotyping data is to be used
-			my $Genotyping = new GENOTYPING(
-				outDir => $outDir,
-				config => $Config,
-			);
-			print STDOUT "Load genotyping information\n";
-
-			$Genotyping->load_file( $Config->get_value('G') );
-
-			if( $Config->get_value('B') and ! $Config->get_value('b') ){
-				my $gStatus = $Genotyping->filter( $bFile );
-				next if !$gStatus;
+			unless( $input ){
+				print STDOUT "WARNING: Failed to generate DAT file\n";
+				next;
 			}
-			$Genotyping->split_gen_by_chr;
-			my $genFiles = $Genotyping->get_chr_files;
-
-			print STDOUT "Find ADBs at heterozygous positions\n";
-			$AD_behavior->find_allelic_behavior( $Alignment, $genFiles );
-
-			# Save BAM file (no longer in use)
-			if( !$Config->get_value('SAVE_BAM') ){
-				`rm -f $input 2> /dev/null`;
-			}
-			# Save BED file (no longer in use)
-			if( $bFile and ! $Config->get_value('SAVE_BED') ){
-				`rm -f $bFile 2> /dev/null`;
-			}
-			# Remove GEN files (no longer in use)
-			`rm -f $outDir/*.gen 2> /dev/null`;
-			# Remove per chromosome DAT files (no longer in use)
-			`rm -f $outDir/chr*.dat 2> /dev/null`;
-			# Remove per chomosome BAM files (no longer in use)
-			`rm -f $outDir/chr*.bam 2> /dev/null`;
-
-			push( @datFiles, $datFile );
 		}
 		else{
 			# Remove per chromosome BAM files (no longer used)
@@ -302,6 +148,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 
 			# Save BAM file (no longer in use)
 			if( !$Config->get_value('SAVE_BAM') ){
+				my $input = $Alignment->get_file;
 				`rm -f $input 2> /dev/null`;
 			}
 		}
@@ -315,8 +162,8 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 		push( @datFiles, $input );
 	}
 }
-# Exit the program if ADBs were NOT requested
-exit if !$Config->get_value('d');
+# Exit the program if only DAT files were requested
+exit unless $Config->get_value('o');
 
 # Save DAT files
 $Config->set_value( 'D', join( ',', @datFiles ) );
@@ -330,60 +177,47 @@ if( $Config->get_value('D') ){
 
 	my @iFiles = split( ',', $Config->get_value('D') );
 
-	# Load up the FDR lookup table
-	print STDOUT "Load ARS table\n";
-
+	# Load ARS parameters
 	my $ArScores = new ARS(
 		file   => $Config->get_value('ARS_FILE'),
 		outDir => $outDir,
 		config => $Config,
 	);
-	print STDOUT "\e[0;32m[ DONE ]\e[0m\n";
 
 	# Make a selection based on given config
-	print STDOUT "Merge allele-dependent candidate SNPs\n";
+	print STDOUT "Merging posititions and calculating ARS\n";
 	my $adbFile = "$outDir/results.adb";
 
 	my $Postprocess = new POSTPROCESSING(
 		file   => $adbFile,
 		config => $Config,
-		outDir => $outDir,
 	);
 	$Postprocess->merge_positions( \@iFiles );
-	$Postprocess->add_statistics;
+	$Postprocess->add_means;
 	$Postprocess->add_ars( $ArScores );
 	$Postprocess->add_reference_bases;
 
-	$Postprocess->find_motif_matches( $Config->get_value('M') )
-		if $Config->get_value('M');
-
-	if( $Config->get_value('n') ){
-		my $annoFlag = $Postprocess->annotate( 'DISEASE' )
-			if $Config->get_value('DISANNO_FILE');
-
-		my $fields = 0;
-		$fields    = 6 if $annoFlag;
-		$Postprocess->annotate( 'GENE', $fields )
-			if $Config->get_value('GENANNO_FILE');
-	}
-	print STDOUT "\e[0;32m[ DONE ]\e[0m\n";
-
 	# Sort files in descending order by ARS values
 	`head -n1 $adbFile > $adbFile.sorted`;
-	`tail -n +2 $adbFile | sort -nrk15,15 >> $adbFile.sorted`;
+	`tail -n +2 $adbFile | sort -nrk15,15 -k1,1V -k2,2n >> $adbFile.sorted`;
 	`mv -f $adbFile.sorted $adbFile`;
 
-	# Save ADB file to $outDir
-	my $sFile = $adbFile;
-	$sFile    =~ s/^.*\//$outDir\//;
-	`cp -f $adbFile $sFile 2> /dev/null`;
+	print STDOUT "\e[0;32m[ DONE ]\e[0m\n";
 
-	if( $Config->get_value('M') ){
-		# Save HIT file to $outDir
-		my $hitFile = $Postprocess->get_hitFile;
-		$sFile      = $hitFile;
-		$sFile      =~ s/^.*\//$outDir\//;
-		`cp -f $hitFile $sFile 2> /dev/null`;
+	if( $Config->get_value('m') or $Config->get_value('n') ){
+		print STDOUT "Postprocessing positions\n";
+
+		$Postprocess->find_motif_matches( $Config->get_value('M') )
+			if $Config->get_value('m');
+
+		if( $Config->get_value('n') ){
+			$Postprocess->annotate( $adbFile, $Config );
+
+			my $hitFile = $Postprocess->get_hitFile;
+			$Postprocess->annotate( $hitFile, $Config )
+				if -s $hitFile;
+		}
+		print STDOUT "\e[0;32m[ DONE ]\e[0m\n";
 	}
 
 	my $time1   = time;
@@ -422,6 +256,208 @@ sub make_recycling_bedFiles
 	}
 
 	return \@bedFiles;
+}
+
+sub process_sra
+{
+	my $input  = shift;
+	my $Config = shift;
+
+	my $Fastq = new FASTQ(
+		config => $Config,
+	);
+	$Fastq->generate( $input );
+
+	# Quality control on raw reads
+	if( $Config->get_value('q') ){
+		$Fastq->quality_control;
+		$Config->set_value( 'QC', 1 );
+	}
+	my $fastq1 = $Fastq->get_file1;
+	my $fastq2 = $Fastq->get_file2;
+
+	if( $fastq2 ){
+		$input = "$fastq1:$fastq2";
+	}
+	else{
+		$input = $fastq1;
+	}
+	$Config->set_value( 'F', $input );
+
+	return $input;
+}
+
+sub load_fastq_file
+{
+	my $input  = shift;
+	my $Config = shift;
+
+	my @jFiles = split( ':', $input );
+	my $jFile1 = $jFiles[0];
+	my $jFile2 = $jFiles[1];
+
+	print STDOUT "  > $jFile1\n";
+	print STDOUT "  > $jFile2\n" if $jFile2;
+
+	my $Fastq = new FASTQ(
+		config => $Config,
+	);
+	$Fastq->set_file1( $jFile1 );
+	$Fastq->set_file2( $jFile2 ) if $jFile2;
+
+	return $Fastq;
+}
+
+sub process_fastq_file
+{
+	my $Fastq  = shift;
+	my $Config = shift;
+
+	# Quality control on raw reads
+	if( $Config->get_value('q') and ! $Config->get_value('QC') ){
+		$Fastq->quality_control;
+	}
+
+	# Align reads to genome
+	my $Alignment = new ALIGNMENT(
+		fastq  => $Fastq,
+		config => $Config,
+	);
+	$Alignment->align_to_genome;
+
+	# Remove duplicate reads
+	if( !$Config->get_value('r') ){
+		$Alignment->remove_duplicates;
+		$Config->set_value( 'DP', 1 );
+	}
+
+	# Save FASTQ files (no longer in use)
+	if( !$Config->get_value('SAVE_FASTQ') ){
+		my $fastq1 = $Fastq->get_file1;
+		my $fastq2 = $Fastq->get_file2;
+		`rm -f $fastq1 2> /dev/null`;
+		`rm -f $fastq2 2> /dev/null` if $fastq2;
+	}
+	my $input = $Alignment->get_file;
+	$Config->set_value( 'A',  $input );
+
+	return $input;
+}
+
+sub process_bam_file
+{
+	my $input  = shift;
+	my $Config = shift;
+	my $bFile  = shift;
+
+	my $Alignment = new ALIGNMENT(
+		file   => $input,
+		config => $Config,
+	);
+
+	# Remove duplicate reads
+	unless( $Config->get_value('r') or $Config->get_value('DP') ){
+		$Alignment->remove_duplicates;
+	}
+
+	if( $bFile ){
+		$Config->set_value( 'B', $bFile );
+		print STDOUT "Peaks file provided\n";
+		print STDOUT "  > $input\n";
+	}
+	elsif( $Config->get_value('c') and ! $bFile ){
+		# Call peaks with MACS2
+		print STDOUT "Call peaks from BAM file\n";
+		print STDOUT "  > $input\n";
+
+		my $Peaks = new PEAKS(
+			bamFile => $Alignment->get_file,
+			config  => $Config,
+		);
+		$Peaks->call_peaks;
+		$Peaks->split_peaks_by_chr;
+
+		# Split BAM file by chromosomes to allow counting reads under peaks
+		$Alignment->split_bam_by_chr;
+		$Config->set_value( 'SP', 1 );
+
+		# Count reads under peaks using chrom-split BAM files
+		$Peaks->count_reads_under_peak( $Alignment->get_chr_files );
+
+		# Save BED files
+		$bFile = $Peaks->get_file;
+		unless( $Config->get_value('SAVE_BED') ){
+			`rm -f $bFile 2> /dev/null`;
+		}
+		# Remove per chromosome BED files (no longer used)
+		my $outDir = $Config->get_value('O');
+		`rm -f $outDir/chr*.bed 2> /dev/null`;
+	}
+
+	return $Alignment;
+}
+
+sub load_genotype
+{
+	my $Config = shift;
+	my $bFile  = shift;
+
+	# Filter SNPs within peaks and split by chromosome
+	my $Genotyping = new GENOTYPING(
+		config => $Config,
+	);
+	print STDOUT "  Loading genotype\n";
+
+	$Genotyping->load_file( $Config->get_value('G') );
+
+	if( $bFile and ! $Config->get_value('b') ){
+		my $gStatus = $Genotyping->filter( $bFile );
+		return 0 unless $gStatus;
+	}
+	$Genotyping->split_gen_by_chr;
+	my $genFiles = $Genotyping->get_chr_files;
+
+	return $genFiles;
+}
+
+sub process_allelic_behavior
+{
+	my $Alignment = shift;
+	my $Config    = shift;
+	my $genFiles  = shift;
+	my $bamFile   = $Alignment->get_file;
+
+	my $AD_behavior = new ADB(
+		file   => $bamFile,
+		config => $Config,
+	);
+	my $datFile = $AD_behavior->find_allelic_behavior( $Alignment, $genFiles );
+
+	# Save BAM file (no longer in use)
+	if( !$Config->get_value('SAVE_BAM') ){
+		`rm -f $bamFile 2> /dev/null`;
+	}
+
+	# Save BED file (no longer in use)
+	my $bFile = $Config->get_value('B');
+
+	if( $bFile and ! $Config->get_value('SAVE_BED') ){
+		`rm -f $bFile 2> /dev/null`;
+	}
+	# Remove GEN files (no longer in use)
+	`rm -f $outDir/*.gen 2> /dev/null`;
+	# Remove per chromosome DAT files (no longer in use)
+	`rm -f $outDir/chr*.dat 2> /dev/null`;
+	# Remove per chomosome BAM files (no longer in use)
+	`rm -f $outDir/chr*.bam 2> /dev/null`;
+
+	if( -s $datFile ){
+		$Config->set_value( 'D', $datFile );
+		return $datFile;
+	}
+	else{
+		return 0;
+	}
 }
 
 sub add_cse_column
@@ -474,7 +510,7 @@ sub die_with_usage
 	my $modified = shift;
 
 	die"
-\n\e[0;33m================================================================================\e[0m
+\e[0;33m================================================================================\e[0m
 
 \e[0;33mMARIO (Measurement of Allelic Ratio Informatics Operator) pipeline\e[0m
 
@@ -514,7 +550,6 @@ sub print_usage
 
       -I  SRA IDs. Comma-separated list
             Based on these IDs, SRA files will be downloaded from NCBI
-      -S  SRA files. Comma-separated list
       -F  FASTQ files (paired-end reads experiments). Comma-separated list
             Paired-end reads experiments should be given in pairs, separated by \":\"
             (example: EXP1_FQ1:EXP1_FQ2,EXP2_FQ1:EXP2_FQ2,EXP3_FQ,EXP4_FQ...)
@@ -535,7 +570,7 @@ sub print_usage
       -G  Genotyping file containing ONLY heterozygous positions
             4-column format: CHR START END STATUS (TAB delimited)
 		    The field STATUS takes values 0:genotyped and 1:imputed
-      -p  (opional) Number of threads to use in parallelized routines
+      -p  (optional) Number of threads to use in parallelized routines
             (it defaults to use all available threads)
 
       -B  (optional) BED files. Comma-separated list
@@ -543,23 +578,21 @@ sub print_usage
       -M  (optional) Motif files
             (provided as a single file listing motif files)
 
-    RNA-SEQ
+    SEQUENCE ALIGNER
       -s  Process RNA-seq experiment using the STAR aligner (34Gb o memory required!)
       -t  Process RNA-seq experiment using the HISAT2 aligner (low memory usage)
-
-          If neither -s nor -t options are given, the program uses the BOWTIE2 aligner,
-            which is better suited for CHIP-seq experiments
+      -u  Process experiment using the BOWTIE2 aligner (low memory usage)
+          BOWTIE2 is NOT suited for processing of RNA-seq experiments
 
     SWITCHES
       -h  This help message
 
-      -f  Generate FASTQ files from SRA files
       -a  Align FASTQ files to genome
-      -d  Find and report ADBs
+      -d  Find ADBs (generates DAT files -raw ADBs-)
+      -o  Combine DAT files. Add Allelic Reproducibility Scores (ARS) and reference bases
+
       -c  Call peaks from BAM file
       -q  Perform quality control of raw-reads (for each FASTQ file)
-      -n  Annotate ADB results
-            It will use the GENANNO_FILE and/or DISANNO_FILE specified in the configuration file
 
       -r  Retain duplicate reads in BAM output
             (the default behavior is to remove duplicate reads)
@@ -569,6 +602,33 @@ sub print_usage
       -x  Print pipeline scheme to the screen
       -y  Generate a default configuration file
       -z  Generate a default Allelic reproducibility score (ARS) file
+
+
+EXAMPLES:
+
+  Download and generate FASTQ files from SRA ID
+    > MARIO -I SRR1608989 -C config_3.2.txt
+
+  ChIP-seq experiments or similar:
+  Align FASTQ reads to hg19 genome (starting from SRA ID)
+    > MARIO -aI SRR1608989 -C config_3.2.txt -X path_to_BOWTIE2_aligner_index_files/hg19
+
+  RNA-seq experiments:
+  Align FASTQ reads to hg19 genome (starting from SRA ID)
+    > MARIO -aI SRR1608989 -C config_3.2.txt -sX path_to_STAR_aligner_index_files
+    > MARIO -aI SRR1608989 -C config_3.2.txt -tX path_to_HISAT2_aligner_index_files/hg19
+
+  Align to genome using paired-end reads
+    > MARIO -aF SRR1_1.fq.gz:SRR1_2.fq.gz -C config_3.2.txt -sX path_to_STAR_aligner_index_files
+
+  Align to genome using single and paired-end reads from different experiments
+    > MARIO -aF SRR1_1.fq.gz:SRR1_2.fq.gz,SRR2.fq.gz -C config_3.2.txt -sX path_to_STAR_aligner_index_files
+
+  Call peaks on BAM files
+    > MARIO -cA SRR1.bam,SRR2.bam -C config_3.2.txt
+
+  Find ADBs from BAM files
+    > MARIO -dA SRR1.bam,SRR2.bam -C config_3.2.txt -G path_to_genotyping_file/hetpos.txt
 
 \e[0;33m================================================================================\e[0m\n\n";
 
@@ -592,30 +652,29 @@ sub print_scheme
 
 The pipeline can be used to start and/or generate any intermediate file in the scheme.
 
-\e[1;32m+-----------------------------------------------------------+\e[0m
-\e[1;32m|                                                           |\e[0m
-\e[1;32m| +-----[I]                       +-----[B]       +-----[G] |\e[0m
-\e[1;32m| | SRAID |                       |  BED  | ----> |  GEN  | |\e[0m
-\e[1;32m| +-------+                       +-------+  (b)  +-------+ |\e[0m
-\e[1;32m|     |                               ^               |     | \e[0m
-\e[1;32m|     |                               | (c)           |     |\e[0m
-\e[1;32m|     v                               |               v     |\e[0m
-\e[1;32m| +-----[S]       +-----[F]       +-----[A]       +-----[D] |       +=======+       +-----[C]\e[0m
-\e[1;32m| |  SRA  | ----> | FASTQ | ----> |  BAM  | ----> |  DAT  | | ----> |  ADB  | <---- | ANNOT |\e[0m
-\e[1;32m| +-------+  (f)  +-------+  (a)  +-------+  (d)  +-------+ |       +=======+  (n)  +-------+\e[0m
-\e[1;32m|                    (q)              ^                     |           |\e[0m
-\e[1;32m|                                     |                     |           |\e[0m
-\e[1;32m|                                     |                     |           v\e[0m
-\e[1;32m|                                 +-----[X]                 |       +=======+       +-----[M]\e[0m
-\e[1;32m|                                 | INDEX |                 |       |  HIT  | <---- | MOTIF |\e[0m
-\e[1;32m|                                 +-------+                 |       +=======+       +-------+\e[0m
-\e[1;32m|                                                           |\e[0m
-\e[1;32m+-----------------------------------------------------------+\e[0m
+\e[1;32m+-------------------------------------------+\e[0m
+\e[1;32m|                                           |\e[0m
+\e[1;32m| +-----[I]       +-----[B]       +-----[G] |\e[0m
+\e[1;32m| | SRAID |       |  BED  | ----> |  GEN  | |\e[0m
+\e[1;32m| +-------+       +-------+  (b)  +-------+ |\e[0m
+\e[1;32m|     |               ^               |     |\e[0m
+\e[1;32m|     |               | (c)           |     |\e[0m
+\e[1;32m|     v               |               v     |\e[0m
+\e[1;32m| +-----[F]       +-----[A]       +-----[D] |       +=======+       +-----[C]\e[0m
+\e[1;32m| | FASTQ | ----> |  BAM  | ----> |  DAT  | | ----> |  ADB  | <---- | ANNOT |\e[0m
+\e[1;32m| +-------+  (a)  +-------+  (d)  +-------+ |  (o)  +=======+  (n)  +-------+\e[0m
+\e[1;32m|    (q)              ^                     |           |\e[0m
+\e[1;32m|                     |                     |           |\e[0m
+\e[1;32m|                     |                     |           v\e[0m
+\e[1;32m|                 +-----[X]                 |       +=======+       +-----[M]\e[0m
+\e[1;32m|                 | INDEX |                 |       |  HIT  | <---- | MOTIF |\e[0m
+\e[1;32m|                 +-------+                 |       +=======+       +-------+\e[0m
+\e[1;32m|                                           |\e[0m
+\e[1;32m+-------------------------------------------+\e[0m
 
 Input files:
 
 -I  SRA ID (i.e. SRR1608989 )
--S  SRA file (i.e. SRR1608989.sra)
 -F  Fastq file (paired-end reads should be given separated with \":\", like: FQ1:FQ2)
 -A  Alignment file (BAM format)
 -D  DAT file (first ouput of the MARIO pipeline containing raw allelic counts)
@@ -636,44 +695,42 @@ Priority of input files:
 -C  Configuration file (can be generated with the -y option)
 -M  (optional) File with a list of motifs (PWMs)
 
--f  Generate FASTQ files from SRA files
 -a  Align FASTQ reads to the genome (generates BAM file)
--d  Find positions with ADBs (allele-dependent behavior)
+-d  Find positions with Allele-Dependent Behavior (ADB). Generates DAT files
+-o  Combine DAT files. Add Allelic Reproducibility Scores (ARS) and reference bases
 
 -B  (optional) Peaks file in BED format
 -O  Name of output folder (all files are saved here)
 -c  Call peaks
 -b  Do not require het-SNPs to fall within peaks
--n  Annotate ADB results
-      It will use the GENANNO_FILE and/or DISANNO_FILE specified in the configuration file
 -p  Number of threads (default: use all available threads)
 -q  Perform quality control on FASTQ files
 -r  Keep duplicate reads
 -s  Input data is RNA-seq (STAR alignment)
 -t  Input data is RNA-seq (HISAT2 alignment)
+-u  Input data is NOT RNA-seq (BOWTIE2 alignment)
 
 Output files:
 (ADB) Allele-dependent behavior at each heterozygous positions, including
-      reproducibility score (ARS) and annotations
+       reproducibility score (ARS) and annotations
 (HIT) If motif files are given, the ADB file is further annotated with motif
-      hits on each heterozygous position
+       hits on each heterozygous position
+
+NOTE: ADB and HIT Results are annotated using any available \"ANNO_#\" file specified in the configuration file
+
 
 Examples:
-  Download SRA file from NCBI based on SRR ID (the downloaded SRA file is 89Mb in size)
-    > MARIO -I SRR1608989
-    > MARIO -I SRR1608989,SRR1608990   (this one downloads two SRA files -89Mb and 99Mb files)
-
-  Download and generate FASTQ files from SRR ID
-    > MARIO -fI SRR1608989 -C config_3.2.txt
+  Download and generate FASTQ files from SRA ID
+    > MARIO -I SRR1608989 -C config_3.2.txt
 
   ChIP-seq experiments or similar:
-  Align FASTQ reads to hg19 genome (starting from downloaded SRA file)
-    > MARIO -aS SRR1608989.sra -C config_3.2.txt -X path_to_BOWTIE2_aligner_index_files/hg19
+  Align FASTQ reads to hg19 genome (starting from SRA ID)
+    > MARIO -aI SRR1608989 -C config_3.2.txt -X path_to_BOWTIE2_aligner_index_files/hg19
 
   RNA-seq experiments:
-  Align FASTQ reads to hg19 genome (starting from downloaded SRA file)
-    > MARIO -aS SRR1608989.sra -C config_3.2.txt -sX path_to_STAR_aligner_index_files
-    > MARIO -aS SRR1608989.sra -C config_3.2.txt -tX path_to_HISAT2_aligner_index_files/hg19
+  Align FASTQ reads to hg19 genome (starting from SRA ID)
+    > MARIO -aI SRR1608989 -C config_3.2.txt -sX path_to_STAR_aligner_index_files
+    > MARIO -aI SRR1608989 -C config_3.2.txt -tX path_to_HISAT2_aligner_index_files/hg19
 
   Align to genome using paired-end reads
     > MARIO -aF SRR1_1.fq.gz:SRR1_2.fq.gz -C config_3.2.txt -sX path_to_STAR_aligner_index_files
@@ -728,13 +785,12 @@ REFGEN_FILE  = /home/mario/Databases/Hsap/hg19/hg19.fa
 #REFGEN_FILE  = /home/mario/Databases/danRer7/danRer7.fa
 #REFGEN_FILE  = /data/weirauchlab/databank/genomes/danRer7/danRer7.fa # Cluster
 
-# BED file containing disease-associated SNPs information
-DISANNO_FILE = /home/mario/Documents/CCHMC_postdoc/Projects/Allele_specific_variants/SDataB_VariantsUsedForEachPhenotype.bed
-#DISANNO_FILE = /data/weirauchlab/databank/apps/MARIO/SDataB_VariantsUsedForEachPhenotype.bed # Cluster
-
-# BED file containing regions used for gene annotations
-GENANNO_FILE = /home/mario/Databases/Hsap/hg19/hg19_exons_anno.bed
-#GENANNO_FILE = /data/weirauchlab/databank/apps/MARIO/hg19_exons_anno.bed # Cluster
+# BED files for annotation
+# Allelic positions will be annotated using all of the \"ANNO_#\" files given
+ANNO_1 = /home/mario/Documents/CCHMC_postdoc/Projects/Allele_specific_variants/SDataB_VariantsUsedForEachPhenotype.bed
+ANNO_2 = /home/mario/Databases/Hsap/hg19/hg19_exons_anno.bed
+#ANNO_1 = /data/weirauchlab/databank/apps/MARIO/SDataB_VariantsUsedForEachPhenotype.bed # Cluster
+#ANNO_2 = /data/weirauchlab/databank/apps/MARIO/hg19_exons_anno.bed # Cluster
 
 #-------------------------------------------------------------------------------
 # Configuration parameters
@@ -770,9 +826,8 @@ PEAK_EXT    = 50    # Number of base pairs to extend called peaks on both sides
 # Switches for saving files (0 = off; 1 = on)
 #-------------------------------------------------------------------------------
 
-SAVE_SRA   = 0  # Save SRA files
-SAVE_FASTQ = 0  # Save FASTQ files
-SAVE_BAM   = 0  # Save alignment files (BAM format)
+SAVE_FASTQ = 1  # Save FASTQ files
+SAVE_BAM   = 1  # Save alignment files (BAM format)
 SAVE_BED   = 1  # Save peak files (BED format)
 
 
@@ -1067,76 +1122,100 @@ sub _configure
 	my $options = shift;
 	my %include;
 
-	# Available processors
-	my $proc        = `nproc`; chomp $proc;
-	$options->{'p'} = $options->{'p'} || $proc;
-
-	# Process option priorities
-	# Options: f,a,d
-	#-------------------------
-	if( $options->{'f'} ){
-		delete $options->{'a'};
-		delete $options->{'d'};
-	}
-	elsif( $options->{'a'} ){
-		delete $options->{'d'};
-	}
-	#-------------------------
-
 	# Process input priorities
-	# options: 'I:S:1:2:A:D'
+	# options: 'D > A > F > S > I'
 	#-------------------------
-	my $inputFile = 'ZZ';
+	my $inputFile = 'NONE';
+
 	if( $options->{'D'} ){
-		$inputFile    = 'D';
-		$include{'D'} = 1;
+		$inputFile      = 'D';
+		$include{'D'}   = 1;
+		$options->{'a'} = 1;
+		$options->{'c'} = 1;
+		$options->{'o'} = 1;
+		$include{'a'}   = 1;
+		$include{'c'}   = 1;
+		$include{'o'}   = 1;
+		_require_file( $options, 'D' );
 
 		# Extract config from configuration file
 		_load_configuration_file( $options );
 
-		# Require d-group options
-		_require_d_group_options( $options, \%include );
-		_require_n_group_options( $options, \%include )
-			if $options->{'n'};
+		# Annotate positions
+		# Linked to -o option if it finds at least one annotation file
+		_require_n_group_options( $options, \%include );
 
-		# Remove unnecessary options
-		delete $include{'G'};
+		# Find motifs
+		# Linked to -o option
+		_require_M_group_options( $options, \%include )
+			if $options->{'M'};
+		_require_m_group_options( $options, \%include )
+			if $options->{'m'};
+
+		# Collapse files; add reference and ARS values
+		_require_o_group_options( $options, \%include )
+			if $options->{'o'};
 	}
 	elsif( $options->{'A'} ){
 		$inputFile      = 'A';
 		$include{'A'}   = 1;
 		$options->{'a'} = 1;
 		$include{'a'}   = 1;
+		_require_file( $options, 'A' );
 
 		# Include all files that may need to be saved
-		$include{'SAVE_BAM'} = 1;
-		$include{'SAVE_BED'} = 1;
+		$include{'SAVE_BAM'}   = 1;
+		$include{'SAVE_BED'}   = 1;
 
 		# Extract config from configuration file
+		for my $opt ( keys %$options ){
+			if( $opt =~ /[GBnMod]/ ){
+				$options->{'d'} = 1;
+			}
+		}
 		_load_configuration_file( $options );
 
-		# if the BAM file is given, make sure it's not erased at the end!
+		# if the SRA file is given, make sure it's not erased at the end!
 		$options->{'SAVE_BAM'} = 1;
 
-		# Require c-group  options
+		# Call peaks
 		if( $options->{'c'} ){
+			# Linked to -a option
 			_require_c_group_options( $options, \%include );
 		}
 		elsif( $options->{'B'} ){
-			$include{'B'}          = 1;
-			$options->{'SAVE_BED'} = 1;
+			_require_b_group_options( $options, \%include );
 		}
+		_require_r_group_options( $options, \%include );
 
-		# Require d-group options
+		# Check downstream analysis
 		if( $options->{'d'} ){
+			# If -G is given, assume allelic analysis is required
+			_require_G_group_options( $options, \%include );
+
+			# Annotate positions
+			# Linked to -o option if it finds at least one annotation file
+			_require_n_group_options( $options, \%include );
+
+			# Find motifs
+			# Linked to -o option
+			_require_M_group_options( $options, \%include )
+				if $options->{'M'};
+			_require_m_group_options( $options, \%include )
+				if $options->{'m'};
+
+			# Collapse files; add reference and ARS values
+			_require_o_group_options( $options, \%include )
+				if $options->{'o'};
+
+			# Perform allelic analysis and downstream tasks
 			_require_d_group_options( $options, \%include );
-			_require_n_group_options( $options, \%include )
-				if $options->{'n'};
 		}
 	}
 	elsif( $options->{'F'} ){
 		$inputFile    = 'F';
 		$include{'F'} = 1;
+		_require_file( $options, 'F' );
 
 		# Include all files that may need to be saved
 		$include{'SAVE_FASTQ'} = 1;
@@ -1144,89 +1223,61 @@ sub _configure
 		$include{'SAVE_BED'}   = 1;
 
 		# Extract config from configuration file
-		_load_configuration_file( $options );
-
-		# if the FASTQ file is given, make sure it's not erased at the end!
-		$options->{'SAVE_FASTQ'} = 1;
-
-		if( $options->{'q'} ){
-			_require_program( $options, 'FASTQC' );
-			$include{'FASTQC'} = 1;
-			$include{'q'}      = 1;
+		for my $opt ( keys %$options ){
+			if( $opt =~ /[GBnMod]/ ){
+				$options->{'d'} = 1;
+			}
+			elsif( $opt =~ /[stuXc]/ ){
+				$options->{'a'} = 1;
+			}
 		}
-
-		if( $options->{'c'} ){
-			_require_c_group_options( $options, \%include );
-			$options->{'a'} = 1;
-			$include{'a'}   = 1;
-		}
-		elsif( $options->{'B'} ){
-			$include{'B'}          = 1;
-			# if the BED file is given, make sure it's not erased at the end!
-			$options->{'SAVE_BED'} = 1;
-		}
-
-		# Require a-group and/or c-group  options
-		if( $options->{'a'} or $options->{'d'} ){
-			_require_a_group_options( $options, \%include );
-		}
-
-		# Require d-group options
-		if( $options->{'d'} ){
-			_require_d_group_options( $options, \%include );
-			_require_n_group_options( $options, \%include )
-				if $options->{'n'};
-		}
-	}
-	elsif( $options->{'S'} ){
-		$inputFile      = 'S';
-		$include{'S'}   = 1;
-		$options->{'f'} = 1;
-		$include{'f'}   = 1;
-
-		# Include all files that may need to be saved
-		$include{'SAVE_SRA'}   = 1;
-		$include{'SAVE_FASTQ'} = 1;
-		$include{'SAVE_BAM'}   = 1;
-		$include{'SAVE_BED'}   = 1;
-
-		# Extract config from configuration file
 		_load_configuration_file( $options );
 
 		# if the SRA file is given, make sure it's not erased at the end!
-		$options->{'SAVE_SRA'} = 1;
+		$options->{'SAVE_FASTQ'} = 1;
 
-		# Require f-group options
-		_require_program( $options, 'FASTQDUMP' );
-		$include{'FASTQDUMP'} = 1;
+		# QC on raw reads
+		# Linked to -f option
+		_require_q_group_options( $options, \%include )
+			if $options->{'q'};
 
-		if( $options->{'q'} ){
-			_require_program( $options, 'FASTQC' );
-			$include{'FASTQC'} = 1;
-			$include{'q'}      = 1;
-		}
-
+		# Call peaks
 		if( $options->{'c'} ){
+			# Linked to -a option
 			_require_c_group_options( $options, \%include );
-			$options->{'a'} = 1;
-			$include{'a'}   = 1;
 		}
 		elsif( $options->{'B'} ){
-			$include{'B'}          = 1;
-			# if the BED file is given, make sure it's not erased at the end!
-			$options->{'SAVE_BED'} = 1;
+			_require_b_group_options( $options, \%include );
 		}
 
 		# Require a-group and/or c-group  options
 		if( $options->{'a'} or $options->{'d'} ){
 			_require_a_group_options( $options, \%include );
+			_require_r_group_options( $options, \%include );
 		}
 
-		# Require d-group options
+		# Check downstream analysis
 		if( $options->{'d'} ){
+			# If -G is given, assume allelic analysis is required
+			_require_G_group_options( $options, \%include );
+
+			# Annotate positions
+			# Linked to -o option if it finds at least one annotation file
+			_require_n_group_options( $options, \%include );
+
+			# Find motifs
+			# Linked to -o option
+			_require_M_group_options( $options, \%include )
+				if $options->{'M'};
+			_require_m_group_options( $options, \%include )
+				if $options->{'m'};
+
+			# Collapse files; add reference and ARS values
+			_require_o_group_options( $options, \%include )
+				if $options->{'o'};
+
+			# Perform allelic analysis and downstream tasks
 			_require_d_group_options( $options, \%include );
-			_require_n_group_options( $options, \%include )
-				if $options->{'n'};
 		}
 	}
 	elsif( $options->{'I'} ){
@@ -1234,72 +1285,100 @@ sub _configure
 		$include{'I'} = 1;
 
 		# Include all files that may need to be saved
-		$include{'SAVE_SRA'}   = 1;
 		$include{'SAVE_FASTQ'} = 1;
 		$include{'SAVE_BAM'}   = 1;
 		$include{'SAVE_BED'}   = 1;
 
 		# Extract config from configuration file
+		for my $opt ( keys %$options ){
+			if( $opt =~ /[GBnMod]/ ){
+				$options->{'d'} = 1;
+			}
+			elsif( $opt =~ /[stuXc]/ ){
+				$options->{'a'} = 1;
+			}
+		}
 		_load_configuration_file( $options );
 
-		if( $options->{'c'} ){
-			_require_c_group_options( $options, \%include );
-			$options->{'a'}      = 1;
-			$include{'a'}        = 1;
-		}
-		elsif( $options->{'B'} ){
-			$include{'B'}          = 1;
-			# if the BED file is given, make sure it's not erased at the end!
-			$options->{'SAVE_BED'} = 1;
-		}
+		# QC on raw reads
+		# Linked to -f option
+		_require_q_group_options( $options, \%include )
+			if $options->{'q'};
 
-		if( $options->{'q'} ){
-			_require_program( $options, 'FASTQC' );
-			$include{'FASTQC'} = 1;
-			$include{'q'}      = 1;
-			$options->{'f'}    = 1;
-		}
-
-		# Require f-group options
-		if( $options->{'f'} or $options->{'a'} or $options->{'d'} ){
-			$include{'f'} = 1;
+		# Extract FASTQ file from SRA file
+		if( $options->{'a'} or $options->{'d'} ){
 			_require_program( $options, 'FASTQDUMP' );
 			$include{'FASTQDUMP'} = 1;
+		}
+
+		# Call peaks
+		if( $options->{'c'} ){
+			# Linked to -a option
+			_require_c_group_options( $options, \%include );
+		}
+		elsif( $options->{'B'} ){
+			_require_b_group_options( $options, \%include );
 		}
 
 		# Require a-group and/or c-group  options
 		if( $options->{'a'} or $options->{'d'} ){
 			_require_a_group_options( $options, \%include );
+			_require_r_group_options( $options, \%include );
 		}
 
-		# Require d-group options
+		# Check downstream analysis
 		if( $options->{'d'} ){
+			# If -G is given, assume allelic analysis is required
+			_require_G_group_options( $options, \%include );
+
+			# Annotate positions
+			# Linked to -o option if it finds at least one annotation file
+			_require_n_group_options( $options, \%include );
+
+			# Find motifs
+			# Linked to -o option
+			_require_M_group_options( $options, \%include )
+				if $options->{'M'};
+			_require_m_group_options( $options, \%include )
+				if $options->{'m'};
+
+			# Collapse files; add reference and ARS values
+			_require_o_group_options( $options, \%include )
+				if $options->{'o'};
+
+			# Perform allelic analysis and downstream tasks
 			_require_d_group_options( $options, \%include );
-			_require_n_group_options( $options, \%include )
-				if $options->{'n'};
 		}
 	}
 	#-------------------------
 	$self->{'configuration'}{'itype'} = $inputFile;
 
 	# Include common options
-	$options->{'O'} = $options->{'O'} || './';
-	$include{'O'}   = 1;
+	# Available processors
+	my $proc        = `nproc`; chomp $proc;
+	$options->{'p'} = $options->{'p'} || $proc;
 	$include{'p'}   = 1;
-	$include{'r'}   = 1;
+	# output directory
+	$options->{'O'} = $options->{'O'} || '.';
+	$include{'O'}   = 1;
 
 	print STDOUT "\n\e[1;31mConfiguration:\e[0m\n\n";
-	for my $conf ( keys %$options ){
+	my @sorted = sort{ $a cmp $b } keys %$options;
+
+	for my $conf ( @sorted ){
 
 		if( $include{$conf} ){
 			my $value = $options->{$conf};
+#			next if $conf =~ /[abcdfnqrst]/;
 
 			if( defined $value ){
-				printf STDOUT ( "%14s: %s\n", $conf, $value );
+				unless( $conf =~ /ANNO_FILES/ ){
+					printf STDOUT ( "%14s: %s\n", $conf, $value );
+				}
 
-				if( $conf eq 'CHROMOSOMES' ){
-					my @chrom = split( ',', $value );
-					$value    = \@chrom;
+				if( $conf =~ /CHROMOSOMES/ ){
+					my @values = split( ',', $value );
+					$value     = \@values;
 				}
 				$self->{'configuration'}{$conf} = $value;
 			}
@@ -1390,6 +1469,66 @@ sub _require_program
 	return 1;
 }
 
+sub _require_q_group_options
+{
+	my $options = shift;
+	my $include = shift;
+
+	_require_program( $options, 'FASTQC' );
+
+	$include->{'FASTQC'} = 1;
+	$include->{'q'}      = 1;
+}
+
+sub _require_G_group_options
+{
+	my $options = shift;
+	my $include = shift;
+
+	_require_file( $options, 'G' );
+
+	$include->{'G'} = 1;
+	$include->{'b'} = 1;
+	$options->{'d'} = 1;
+
+	# Linked to -c or -B options
+	unless( $options->{'b'} ){
+		# Make sure call peaks is enabled or BED file is given
+		unless( $options->{'c'} or $include->{'B'} ){
+			die "ERROR: Missing options -c or -B\n";
+		}
+	}
+}
+
+sub _require_c_group_options
+{
+	my $options     = shift;
+	my $include     = shift;
+	$include->{'c'} = 1;
+	$options->{'a'} = 1;
+	$include->{'a'} = 1;
+
+	_require_program( $options, 'MACS2' );
+
+	$include->{'CHROMOSOMES'} = 1;
+	$include->{'MACS2'}       = 1;
+	$include->{'PEAK_EXT'}    = 1;
+	$include->{'PEAK_RPKM'}   = 1;
+	$include->{'PEAK_WIDTH'}  = 1;
+	$options->{'SAVE_BED'}    = 1;
+}
+
+sub _require_b_group_options
+{
+	my $options = shift;
+	my $include = shift;
+
+	_require_file( $options, 'B' );
+
+	$include->{'B'}        = 1;
+	$options->{'SAVE_BED'} = 1;
+}
+
 sub _require_a_group_options
 {
 	my $options     = shift;
@@ -1397,8 +1536,10 @@ sub _require_a_group_options
 	$options->{'a'} = 1;
 	$include->{'a'} = 1;
 
+	_require_file( $options, 'REFGEN_FILE' );
 	_require_program( $options, 'SAMTOOLS' );
-	$include->{'SAMTOOLS'} = 1;
+	$include->{'SAMTOOLS'}    = 1;
+	$include->{'REFGEN_FILE'} = 1;
 
 	if( $options->{'s'} ){
 		_require_file( $options, 'X', '/SAindex' );
@@ -1414,168 +1555,114 @@ sub _require_a_group_options
 		$include->{'HISAT2'}  = 1;
 		$include->{'X'}       = 1;
 	}
-	else{
+	elsif( $options->{'u'} ){
 		_require_file( $options, 'X', '.1.bt2' );
 		_require_program( $options, 'BOWTIE2' );
+		$include->{'u'}       = 1;
 		$include->{'BOWTIE2'} = 1;
 		$include->{'X'}       = 1;
 	}
-
-	if( $options->{'r'} ){
-		_require_program( $options, 'PICARD' );
-		$include->{'PICARD'} = 1;
-		$include->{'r'}      = 1;
+	else{
+		die "ERROR: Missing aligner option\n  Can be any of:\n    -s STAR\n    -t HISAT2\n    -u BOWTIE2\n";
 	}
-
-	return 1;
 }
 
-sub _require_c_group_options
+sub _require_r_group_options
+{
+	my $options = shift;
+	my $include = shift;
+	$include->{'r'} = 1;
+
+	# Remove duplicate reads
+	unless( $options->{'r'} ){
+		_require_program( $options, 'PICARD' );
+		$include->{'PICARD'} = 1;
+	}
+}
+
+sub _require_M_group_options
 {
 	my $options = shift;
 	my $include = shift;
 
-	_require_program( $options, 'MACS2' );
-	_require_program( $options, 'SAMTOOLS' );
-	_require_file( $options, 'REFGEN_FILE' );
-	$include->{'CHROMOSOMES'} = 1;
-	$include->{'REFGEN_FILE'} = 1;
-	$include->{'SAMTOOLS'}    = 1;
-	$include->{'MACS2'}       = 1;
-	$include->{'PICARD'}      = 1;
-	$include->{'PEAK_EXT'}    = 1;
-	$include->{'PEAK_RPKM'}   = 1;
-	$include->{'PEAK_WIDTH'}  = 1;
-	$include->{'c'}           = 1;
-	$options->{'SAVE_BED'}    = 1;
+	_require_file( $options, 'M' );
+	$options->{'m'} = 1;
+	$options->{'o'} = 1;
+	$include->{'o'} = 1;
+}
 
-	return 1;
+sub _require_m_group_options
+{
+	my $options     = shift;
+	my $include     = shift;
+	$include->{'m'} = 1;
+	$include->{'M'} = 1;
+	$options->{'o'} = 1;
+	$include->{'o'} = 1;
+	_require_file( $options, 'M' );
+	_require_program( $options, 'MOODS' );
+
+	$include->{'MOODS'}      = 1;
+	$include->{'SNP_PADD'}   = 1;
+	$include->{'MOODS_PVAL'} = 1;
+	$include->{'MIN_SCORE'}  = 1;
 }
 
 sub _require_d_group_options
 {
 	my $options     = shift;
 	my $include     = shift;
-	$options->{'d'} = 1;
 	$include->{'d'} = 1;
 
-	_require_file( $options, 'G' );
-	$include->{'G'} = 1;
+	_require_program( $options, 'SAMTOOLS' );
 
-	if( $options->{'M'} ){
-		_require_file( $options, 'M' );
-		_require_program( $options, 'MOODS' );
-		$include->{'M'}          = 1;
-		$include->{'MOODS'}      = 1;
-		$include->{'SNP_PADD'}   = 1;
-		$include->{'MOODS_PVAL'} = 1;
-		$include->{'MIN_SCORE'}  = 1;
-	}
+	$include->{'CHROMOSOMES'} = 1;
+	$include->{'SAMTOOLS'}    = 1;
+	$include->{'S_READS_CF'}  = 1;
+	$include->{'W_READS_CF'}  = 1;
+}
+
+sub _require_o_group_options
+{
+	my $options     = shift;
+	my $include     = shift;
+
+	MESSAGES::print_ars_file() if !-s 'ARS_table.txt';
+	$options->{'ARS_FILE'} = 'ARS_table.txt';
+
+	_require_file( $options, 'ARS_FILE' );
 	_require_file( $options, 'REFGEN_FILE' );
 	_require_program( $options, 'BEDTOOLS' );
-	_require_program( $options, 'SAMTOOLS' );
-	MESSAGES::print_ars_file() if !-s 'ARS_table.txt';
 
-	$include->{'CHROMOSOMES'}  = 1;
-	$include->{'REFGEN_FILE'}  = 1;
-	$include->{'BEDTOOLS'}     = 1;
-	$include->{'ARS_FILE'}     = 1;
-	$include->{'S_READS_CF'}   = 1;
-	$include->{'W_READS_CF'}   = 1;
+	$include->{'REFGEN_FILE'} = 1;
+	$include->{'BEDTOOLS'}    = 1;
+	$include->{'ARS_FILE'}    = 1;
 }
 
 sub _require_n_group_options
 {
-	my $options     = shift;
-	my $include     = shift;
-	$include->{'n'} = 1;
+	my $options = shift;
+	my $include = shift;
+	my @sorted  = sort{ $a cmp $b } keys %$options;
+	my @annoFiles;
 
-	_require_file( $options, 'DISANNO_FILE' );
-	_require_file( $options, 'GENANNO_FILE' );
-	$include->{'DISANNO_FILE'} = 1;
-	$include->{'GENANNO_FILE'} = 1;
-}
+	for my $opt ( @sorted ){
 
-1;
+		if( $opt =~ /ANNO_/ ){
+			_require_file( $options, $opt );
 
-#-------------------------------------------------------------------------------
-package SRA;
-use base 'FILE';
-use warnings;
-use strict;
+			$include->{$opt} = 1;
+			$options->{'n'}  = 1;
+			$options->{'o'}  = 1;
+			$include->{'n'}  = 1;
+			$include->{'o'}  = 1;
 
-sub new
-{
-	my $class     = shift;
-	my %arguments = @_;
-	my $sra_id    = $arguments{'sra_id'}     or
-		die "ERROR: Please provide an argument for 'srr_id'\n";
-    my $outDir    = $arguments{'outDir'}    or
-		die "ERROR: Please provide an argument for 'outDir'\n";
-    my $Config    = $arguments{'config'} or
-		die "ERROR: Please provide an argument for 'config'\n";
-
-	my $sraFile   = "$outDir/$sra_id.sra";
-
-	# Constructor
-	my $self = SUPER::new $class
-	(
-	 	file   => $sraFile,
-		outDir => $outDir,
-	);
-	$self->{'sra_id'} = $sra_id; # srr_id
-	$self->{'config'} = $Config;
-	bless( $self, $class );
-
-	return $self;
-}
-
-sub destroy
-{
-	my $self = shift;
-	my $file = $self->{'file'};
-
-	print STDOUT "  Removing SRA files\n";
-	`rm -f "$file"`;
-
-	return 1;
-}
-
-sub get_srr_id
-{
-	my $self = shift;
-	return $self->{'srr_id'};
-}
-
-sub download
-{
-	my $self    = shift;
-	my $sraFile = $self->get_file;
-	my $base    = $self->get_base;
-	my $outDir  = $self->get_outDir;
-	my $srr     = $self->{'sra_id'};
-	my $config  = $self->{'config'};
-
-	print STDOUT "  Downloading ...\n";
-	my $time0   = time;
-
-	# Download SRA file if incomplete or does not exist
-	my $logFile = "$outDir/$base\_ncbi.log";
-	my $srr3    = substr( $srr, 0, 3 );
-	my $srr6    = substr( $srr, 0, 6 );
-	my $ftpSite = "ftp://ftp-trace.ncbi.nlm.nih.gov/sra/sra-instant/reads/ByRun/sra/$srr3/$srr6/$srr/$srr.sra";
-	`wget -t 10 -P $outDir -c $ftpSite > $logFile 2>&1`;
-
-	if( !-s $sraFile ){
-		print STDOUT "    Failed to download!\n";
-		return 0;
+			push( @annoFiles, $options->{$opt} );
+		}
 	}
-
-	my $time1   = time;
-	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
-	print STDOUT "  Time elapsed: $elapsed min\n";
-
-	return 1;
+	$options->{'ANNO_FILES'}  = \@annoFiles;
+	$include->{'ANNO_FILES'}  = 1;
+	$include->{'CHROMOSOMES'} = 1;
 }
 
 1;
@@ -1590,10 +1677,9 @@ sub new
 {
 	my $class     = shift;
 	my %arguments = @_;
-    my $outDir    = $arguments{'outDir'} or
-		die "ERROR: Please provide an argument for 'outDir'\n";
     my $Config    = $arguments{'config'} or
 		die "ERROR: Please provide an argument for 'config'\n";
+	my $outDir    = $Config->get_value('O');
 
 	# Constructor
 	my $self = SUPER::new $class
@@ -1633,6 +1719,33 @@ sub get_file2
 {
 	my $self = shift;
 	return $self->{'file2'} || 0;
+}
+
+sub get_base1
+{
+	my $self = shift;
+	my $base = $self->{'file1'};
+
+	$base =~ s/^.*\///;
+	$base =~ s/(.*)_read[1]/$1/;
+	$base =~ s/(.*).f(ast)*q(.gz)*/$1/;
+	$base =~ s/(.*)_[1]/$1/;
+
+	return $base;
+}
+
+sub get_base2
+{
+	my $self = shift;
+	my $base = $self->{'file2'} || 0;
+	return 0 unless $base;
+
+	$base =~ s/^.*\///;
+	$base =~ s/(.*)_read[2]/$1/;
+	$base =~ s/(.*).f(ast)*q(.gz)*/$1/;
+	$base =~ s/(.*)_[2]/$1/;
+
+	return $base;
 }
 
 sub set_file1
@@ -1723,7 +1836,7 @@ sub quality_control
 sub generate
 {
 	my $self      = shift;
-	my $sraFile   = shift;
+	my $sra       = shift;
 	my $outDir    = $self->get_outDir;
 	my $Config    = $self->{'config'};
 	my $fastqDump = $Config->get_value('FASTQDUMP');
@@ -1732,16 +1845,18 @@ sub generate
 	print STDOUT "  Generating with --split-files option ...\n";
 	my $time0   = time;
 
-	my $fastq1  = $sraFile;
-	$fastq1     =~ s/.sra$/_1.fastq/;
+	my $fastq1  = $sra;
+	$fastq1     =~ s/(.sra)*$/_1.fastq.gz/;
 	$fastq1     =~ s/^.*\//$outDir\//;
-	my $fastq2  = $sraFile;
-	$fastq2     =~ s/.sra$/_2.fastq/;
+	my $fastq2  = $sra;
+	$fastq2     =~ s/(.sra)*$/_2.fastq.gz/;
 	$fastq2     =~ s/^.*\//$outDir\//;
 
 	# Get FASTQ files
 	if( !-s $fastq1 ){
-		`$fastqDump --split-files $sraFile -O $outDir 2> /dev/null`;
+		`$fastqDump --split-files --gzip $sra -O $outDir 2> /dev/null`;
+		die "ERROR: Failed to generate FASTQ files\n"
+			unless -s $fastq1;
 	}
 
 	# Check for validity of FASTQ sequences after splitting
@@ -1754,10 +1869,11 @@ sub generate
 		`rm -f $fastq1 $fastq2 2> /dev/null`;
 		print STDOUT "  Trying again without --split-files option ...\n";
 		# Get FASTQ files
-		`$fastqDump $sraFile -O $outDir 2> /dev/null`;
+		`$fastqDump --gzip $sra -O $outDir 2> /dev/null`;
+		$fastq1 =~ s/_1.fastq/.fastq/;
 	}
 
-	$numFiles = `ls $outDir/*.fastq 2> /dev/null | wc -l`;
+	$numFiles = `ls $outDir/*.fastq.gz 2> /dev/null | wc -l`;
 	chomp $numFiles;
 
 	if( $numFiles == 0 ){
@@ -1798,10 +1914,10 @@ sub check_fastq_file
 	chomp $fastq;
 
 	if( -s $fastq ){
-		my $base_count = `head -n2 $fastq | tail -n1 | wc -c`;
-		chomp $base_count;
+		my $baseCount = `zcat $fastq | head -n2 | tail -n1 | wc -c`;
+		chomp $baseCount;
 
-		if( $base_count > $cutoff ){
+		if( $baseCount > $cutoff ){
 			return 1;
 		}
 		else{
@@ -1818,6 +1934,7 @@ sub check_fastq_file
 
 #-------------------------------------------------------------------------------
 package ALIGNMENT;
+use base 'FILE';
 use warnings;
 use strict;
 
@@ -1825,54 +1942,35 @@ sub new
 {
 	my $class     = shift;
 	my %arguments = @_;
-    my $bamFile   = $arguments{'bamFile'};
+    my $file      = $arguments{'file'};
     my $Fastq     = $arguments{'fastq'};
-    my $outDir    = $arguments{'outDir'}     or
-		die "ERROR: Please provide an argument for 'outDir'\n";
     my $Config    = $arguments{'config'} or
 		die "ERROR: Please provide an argument for 'config'\n";
+	my $outDir    = $Config->get_value('O');
 	my $chroms    = $Config->get_value('CHROMOSOMES');
 	my $fastq1;
 	my $fastq2;
 
-	if( !$chroms ){
-		_get_chroms_from_fa( $Config->get_value('REFGEN_FILE'), $Config );
-		$chroms = $Config->get_value('CHROMOSOMES');
+	if( $Fastq ){
+		my $fastq1    = $Fastq->get_file1;
+		my $fastq2    = $Fastq->get_file2;
+		my $base      = $Fastq->get_base1;
+		$file         = "$outDir/$base.bam" unless $file;
 	}
-	my $base;
-
-	if( $bamFile ){
-		$base = $bamFile;
-		$base =~ s/^.*\///;
-		$base =~ s/.bam$//;
-	}
-	else{
-		$fastq1 = $Fastq->get_file1;
-		$fastq2 = $Fastq->get_file2;
-		$base   = $fastq1;
-		$base   =~ s/^.*\///;
-		$base   =~ s/(.*)_read[12]/$1/;
-		$base   =~ s/(.*).f(ast)*q(.gz)*/$1/;
-		$base   =~ s/(.*)_[12]/$1/;
-	}
-
-	# Get file names by chromosome
-	my %chrFiles;
-
-	for my $chr ( @$chroms ){
-		$chrFiles{$chr} = "$outDir/$chr\_$base.bam";
-	}
+	die "ERROR: Please provide an argument for 'file' or 'fastq'\n"
+		unless $file;
 
 	# Constructor
-	my $self = {
-	 	file       => "$outDir/$base.bam",
-	 	file1      => $fastq1,
-	 	file2      => $fastq2,
-		outDir     => $outDir,
-		config     => $Config,
-		chrFiles   => \%chrFiles,
-		readLength => undef,
-	};
+	my $self = SUPER::new $class
+	(
+		file   => $file,
+		outDir => $outDir,
+	);
+	$self->{'config'}     = $Config;
+	$self->{'file1'}      = $fastq1 || 0;
+	$self->{'file2'}      = $fastq2 || 0;
+	$self->{'chrFiles'}   = undef;
+	$self->{'readLength'} = undef;
 	bless( $self, $class );
 
 	return $self;
@@ -2013,7 +2111,7 @@ sub align_to_genome
 		}
 	}
 	# Align with BOWTIE2
-	else{
+	elsif( $Config->get_value('u') ){
 		my $bowtie2   = $Config->get_value('BOWTIE2');
 		my $log_file  = "$outDir/$base\_bowtie2.log";
 
@@ -2135,11 +2233,12 @@ sub index_bam
 sub remove_duplicates
 {
 	my $self     = shift;
-	my $bamFile  = $self->{'file'};
+	my $bamFile  = $self->get_file;
+	my $base     = $self->get_base;
 	my $readLen  = $self->{'readLength'};
-	my $outDir   = $self->{'outDir'};
 	my $Config   = $self->{'config'};
 	my $samtools = $Config->get_value('SAMTOOLS');
+	my $outDir   = $Config->get_value('O');
 
 	print STDOUT "  Removing duplicate reads ...\n";
 
@@ -2157,7 +2256,7 @@ sub remove_duplicates
 	 	$reads,
 		$dups,
 		$percDup,
-	) = _remove_duplicate_reads( $bamFile, $Config );
+	) = _remove_duplicate_reads( $self );
 	die "    Failed!\n" if !$reads;
 
 	my $perc    = sprintf( "%u", 100 - $percDup * 100 );
@@ -2174,17 +2273,19 @@ sub remove_duplicates
 
 sub _remove_duplicate_reads
 {
-	my $bamFile = shift;
-	my $Config  = shift;
-	my $picard  = $Config->get_value('PICARD');
-	my $bamBase = $bamFile;
-	$bamBase    =~ s/\.bam$//;
+	my $self     = shift;
+	my $bamFile  = $self->get_file;
+	my $base     = $self->get_base;
+	my $readLen  = $self->{'readLength'};
+	my $Config   = $self->{'config'};
+	my $picard   = $Config->get_value('PICARD');
+	my $outDir   = $Config->get_value('O');
 
-	`$picard I=$bamFile REMOVE_DUPLICATES=true O=$bamBase\_dedup.bam M=$bamBase\_picard.log 2> /dev/null`;
-	die "    Failed!\n" if !-s "$bamBase\_dedup.bam";
-	`mv -f $bamBase\_dedup.bam $bamFile 2> /dev/null`;
+	`$picard I=$bamFile REMOVE_DUPLICATES=true O=$base\_dedup.bam M=$base\_picard.log 2> /dev/null`;
+	die "    Failed!\n" if !-s "$base\_dedup.bam";
+	`mv -f $base\_dedup.bam $bamFile 2> /dev/null`;
 
-	my $result = `grep -A1 "^LIBRARY" $bamBase\_picard.log | tail -1 | cut -f2,3,5,6,8`;
+	my $result = `grep -A1 "^LIBRARY" $base\_picard.log | tail -1 | cut -f2,3,5,6,8`;
 	chomp $result;
 
 	# dups: number of single duplicate reads; pDups: number of paired duplicate reads
@@ -2234,14 +2335,12 @@ sub get_length_of_largest_read
 sub split_bam_by_chr
 {
 	my $self     = shift;
-	my $bamFile  = $self->{'file'};
-	my $outDir   = $self->{'outDir'};
+	my $bamFile  = $self->get_file;
+	my $base     = $self->get_base;
 	my $Config   = $self->{'config'};
 	my $samtools = $Config->get_value('SAMTOOLS');
 	my $chroms   = $Config->get_value('CHROMOSOMES');
-	my $base     = $bamFile;
-	$base        =~ s/^.*\///;
-	$base        =~ s/\.bam$//;
+	my $outDir   = $Config->get_value('O');
 	my %chrFiles;
 
 	print STDOUT "  Split BAM file by chromosomes ...\n";
@@ -2322,10 +2421,9 @@ sub new
 	my %arguments = @_;
     my $bamFile   = $arguments{'bamFile'} or
 		die "ERROR: Please provide an argument for 'bamFile'\n";
-    my $outDir    = $arguments{'outDir'}  or
-		die "ERROR: Please provide an argument for 'outDir'\n";
     my $Config    = $arguments{'config'}  or
 		die "ERROR: Please provide an argument for 'config'\n";
+	my $outDir    = $Config->get_value('O');
 	my $chroms    = $Config->get_value('CHROMOSOMES');
 
 	my $base      = $bamFile;
@@ -2656,8 +2754,39 @@ sub count_reads_under_peak
 	# Remove spurious peaks (>= 300 bp in width AND >= 0.4 RPKM)
 	my $totalCount = `cut -f6 $peakFile | paste -sd+ | bc`; chomp $totalCount;
 	$minWidth     += 2 * $extend;
-	`awk '{print \$0,\$3-\$2,\$6/(\$3-\$2)*1000000/$totalCount}' OFS='\\t' $peakFile | awk '{if(\$8>=$minRpkm && \$7>=$minWidth) print \$0}' | sort -Vk1,1 -k2,2n > $peakFile.tmp`;
-	`mv -f $peakFile.tmp $peakFile`;
+	open( IN, $peakFile ) or
+		die "ERROR: Could not open file $peakFile\n";
+	my $tmpFile = "$peakFile.tmp";
+	open( OUT, ">$tmpFile" ) or
+		die "ERROR: Could not open file $tmpFile.tmp\n";
+
+	while( my $line = <IN> ){
+		chomp $line;
+		my @split = split( "\t", $line );
+		my $start = $split[1];
+		my $end   = $split[2];
+		my $reads = $split[5];
+		my $width = $end - $start;
+		my $rpkm  = sprintf( "%.4f", ( $reads / $width ) * ( 1000000 / $totalCount ) );
+
+		# Flags for stringent filtering options
+		my $tier1 = 0; # Flag for RPKM filtering
+		my $tier2 = 0; # Flag for peak width filtering
+		$tier1    = 1 if $rpkm  >= $minRpkm;
+		$tier2    = 1 if $width >= $minWidth;
+
+		my @output = (
+			$line,
+			$width,
+			$rpkm,
+			$tier1,
+			$tier2,
+		);
+		print OUT join( "\t", @output ), "\n";
+	}
+	close IN;
+	close OUT;
+	`mv -f $tmpFile $peakFile`;
 
 	# Report on the total number of reads in all peaks
 	print STDOUT "    Total number of reads in peaks = $totalCount\n";
@@ -2681,10 +2810,9 @@ sub new
 {
 	my $class     = shift;
 	my %arguments = @_;
-    my $outDir    = $arguments{'outDir'} or
-		die "ERROR: Please provide an argument for 'outDir'\n";
 	my $Config    = $arguments{'config'} or
 		die "ERROR: Please provide an argument for 'config'\n";
+	my $outDir    = $Config->get_value('O');
 	my $chroms    = $Config->get_value('CHROMOSOMES');
 	my $gen_path  = $Config->get_value('GENOT_PATH');
 
@@ -2876,10 +3004,9 @@ sub new
 	my $class     = shift;
 	my %arguments = @_;
     my $adbFile   = $arguments{'file'};
-    my $outDir    = $arguments{'outDir'}    or
-		die "ERROR: Please provide an argument for 'outDir'\n";
     my $Config    = $arguments{'config'} or
 		die "ERROR: Please provide an argument for 'config'\n";
+	my $outDir    = $Config->get_value('O');
 
 	# Constructor
 	my $self = SUPER::new $class(
@@ -2921,10 +3048,7 @@ sub find_allelic_behavior
 	my $self      = shift;
 	my $Alignment = shift;
 	my $genFiles  = shift;
-	my $datFile   = $self->get_file;
-	my $datBase   = $self->get_base;
-	my $outDir    = $self->get_outDir;
-	my $bamFiles  = $Alignment->get_chr_files;
+	my $base      = $self->get_base;
 
 	my $Config    = $self->{'config'};
 	my $proc      = $Config->get_value('p');
@@ -2932,6 +3056,16 @@ sub find_allelic_behavior
 	my $chroms    = $Config->get_value('CHROMOSOMES');
 	my $sReadsCf  = $Config->get_value('S_READS_CF');
 	my $wReadsCf  = $Config->get_value('W_READS_CF');
+	my $outDir    = $Config->get_value('O');
+
+	# Create directory to deposit ADB file
+	my $datFile   = "$outDir/$base.dat";
+
+	# Split BAM file y chromosomes
+	unless( $Config->get_value('SP') ){
+		$Alignment->split_bam_by_chr;
+	}
+	my $bamFiles  = $Alignment->get_chr_files;
 
 	my @header = (
 		'CHR',
@@ -2958,7 +3092,7 @@ sub find_allelic_behavior
 		my $chrBamFile = $bamFiles->{$chr};
 		open( BAM, "$samtools view $chrBamFile |" ) or
 			die "ERROR: Could not open BAM file $chrBamFile\n";
-		my $chr_datFile = "$outDir/$chr\_$datBase.dat";
+		my $chr_datFile = "$outDir/$chr\_$base.dat";
 		open( DAT, ">$chr_datFile" ) or
 			die "ERROR: Could not create file $chr_datFile\n";
 
@@ -2984,19 +3118,17 @@ sub find_allelic_behavior
 		# Print header
 		print DAT join( "\t", @header ), "\n";
 
-=pod
-		# BAM line column infomation
-		0 SEQ_ID    SRR873824.24745869
-		1 CODE      0
-		2 CHR       chr22
-		3 POS       16051210
-		4 -
-		5 CIGAR     36M
-		6 -
-		7 -
-		8 -
-		9 SEQUENCE  GTAAAATACTTTCATTTTCCTTCAGAGTCTGCTGTC
-=cut
+#		# BAM line column infomation
+#		0 SEQ_ID    SRR873824.24745869
+#		1 CODE      0
+#		2 CHR       chr22
+#		3 POS       16051210
+#		4 -
+#		5 CIGAR     36M
+#		6 -
+#		7 -
+#		8 -
+#		9 SEQUENCE  GTAAAATACTTTCATTTTCCTTCAGAGTCTGCTGTC
 
 		# Process First BAM line
 		my $bam_line    = <BAM>;
@@ -3066,10 +3198,10 @@ sub find_allelic_behavior
 	$pm->wait_all_children;
 
 	# Print header on DAT file
-	`head -n1 $outDir/chr*_$datBase.dat | grep -m1 "^CHR" > $datFile`;
+	`head -n1 $outDir/chr*_$base.dat | grep -m1 "^CHR" > $datFile`;
 
 	# Print body on DAT file
-	`cat $outDir/chr*_$datBase.dat | grep -v "^CHR" | sort -Vk1,1 -k2,2n >> $datFile`;
+	`cat $outDir/chr*_$base.dat | grep -v "^CHR" | sort -Vk1,1 -k2,2n >> $datFile`;
 
 	# Count total allelic binders there are in the DAT file
 	my $numAllelic = `tail -n +2 $datFile | wc -l`;
@@ -3088,7 +3220,8 @@ sub find_allelic_behavior
 	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
 	print STDOUT "  Time elapsed: $elapsed min\n";
 
-	return 1;
+	return 0 unless -s $datFile;
+	return $datFile;
 }
 
 sub _write_results
@@ -3120,24 +3253,6 @@ sub _write_results
 				my $ws_ratio = $wReads / $sReads;
 				print $DAT "$chr\t$pos\t$pos\t$s_base\t$w_base\t$sReads\t$wReads\t$ws_ratio\t$imp\n";
 			}
-=pod
-			else{
-				# No genotyping information
-				# All positions are reported, except those with $wReads < $wrCutoff
-				next if keys %$pileups_base < 2; # 2 or more bases found (only interested in allelic behavior)
-
-				my $s_base   = shift @sorted;
-				my $sReads  = $pileups_base->{$s_base};
-				my $w_base   = shift @sorted;
-				my $wReads  = $pileups_base->{$w_base};
-				my $imp      = 'p';
-				next if "$s_base$w_base" =~ /-/; # No indels
-				next if $wReads < $wrCutoff;
-
-				my $ws_ratio = $wReads / $sReads;
-				print $DAT "$chr\t$pos\t$s_base\t$w_base\t$sReads\t$wReads\t$ws_ratio\t$imp\n";
-			}
-=cut
 		}
 	}
 
@@ -3146,19 +3261,17 @@ sub _write_results
 
 sub _correct_sequence
 {
-=pod
-	# BAM line column infomation
-	0 SEQ_ID    SRR873824.24745869
-	1 CODE      0
-	2 CHR       chr22
-	3 POS       16051210
-	4 -
-	5 CIGAR     36M
-	6 -
-	7 -
-	8 -
-	9 SEQUENCE  GTAAAATACTTTCATTTTCCTTCAGAGTCTGCTGTC
-=cut
+#	BAM line column infomation
+#	0 SEQ_ID    SRR873824.24745869
+#	1 CODE      0
+#	2 CHR       chr22
+#	3 POS       16051210
+#	4 -
+#	5 CIGAR     36M
+#	6 -
+#	7 -
+#	8 -
+#	9 SEQUENCE  GTAAAATACTTTCATTTTCCTTCAGAGTCTGCTGTC
 	my $bam   = shift;
 	my $cigar = '' . $bam->[5];
 	my $len   = length $bam->[9];
@@ -3786,12 +3899,11 @@ sub new
 {
 	my $class     = shift;
 	my %arguments = @_;
-    my $file      = $arguments{'file'}       or
+    my $file      = $arguments{'file'}   or
 		die "ERROR: Please provide an argument for 'file'\n";
-    my $outDir    = $arguments{'outDir'}     or
-		die "ERROR: Please provide an argument for 'outDir'\n";
     my $Config    = $arguments{'config'} or
 		die "ERROR: Please provide an argument for 'config'\n";
+	my $outDir    = $Config->get_value('O');
 	my $hitFile   = $file;
 	$hitFile      =~ s/\.adb$/.hit/;
 
@@ -3800,8 +3912,8 @@ sub new
 	 	file   => $file,
 		outDir => $outDir,
 	);
-	$self->{'config'} = $Config;
-	$self->{'hitFile'}    = $hitFile;
+	$self->{'config'}  = $Config;
+	$self->{'hitFile'} = $hitFile;
 	bless( $self, $class );
 
 	return $self;
@@ -3929,7 +4041,7 @@ sub _merge
 	return @data;
 }
 
-sub add_statistics
+sub add_means
 {
 	my $self      = shift;
 	my $procFile  = $self->get_file;
@@ -4224,15 +4336,15 @@ sub find_motif_matches
 
 	# Extract genomic sequences
 	print STDOUT "    Extracting REF sequences\n";
-	my $ref_seqs = $self->_extract_ref_sequences;
-	if( !$ref_seqs ){
+	my $refSeqs = $self->_extract_ref_sequences;
+	if( !$refSeqs ){
 		print STDOUT "    Failed!\n";
 		return 0;
 	}
 
 	# Print allele sequences to a temporary FASTA file
 	print STDOUT "    Building allele sequences\n";
-	my $allele_seqs = $self->_build_allele_sequences( $ref_seqs );
+	my $allele_seqs = $self->_build_allele_sequences( $refSeqs );
 	if( !$allele_seqs ){
 		print STDOUT "    Failed!\n";
 		return 0;
@@ -4303,13 +4415,14 @@ sub _extract_ref_sequences
 	my $bedtools = $Config->get_value('BEDTOOLS');
 
 	# Generate BED file using padded regions around each SNP
-	my $bedFile = "$outDir/ref_seqs.bed";
+	my $bedFile = "$outDir/refSeqs.bed";
 	`tail -n +2 $procFile | awk '{print \$1,\$2-$padding,\$2+$padding-1}' OFS='\\t' > $bedFile`;
 
-	my $ref_seqs = "$outDir/ref_seqs.txt";
-	`$bedtools getfasta -fi $genome -bed $bedFile -tab -fo /dev/stdout | cut -f2 > $ref_seqs`;
+	my $refFile = "$outDir/refSeqs.txt";
+	`$bedtools getfasta -fi $genome -bed $bedFile -tab -fo /dev/stdout | cut -f2 > $refFile`;
+	`rm -f $bedFile`;
 
-	return $ref_seqs if -s $ref_seqs;
+	return $refFile if -s $refFile;
 	return 0;
 }
 
@@ -4321,7 +4434,7 @@ sub _build_allele_sequences
 	my $outDir   = $self->{'outDir'};
 	my $Config   = $self->{'config'};
 	my $padding  = $Config->get_value( 'SNP_PADD' );
-	my $seqFile  = "$outDir/seqs.fasta";
+	my $seqFile  = "$outDir/allele_sequences.fasta";
 
 	my $IN     = $self->Open;
 	my $header = <$IN>;
@@ -4333,16 +4446,14 @@ sub _build_allele_sequences
 	# Print header
 	print OUT ">allele-sequences\n";
 
-=pod
-0 CHR
-1 START
-2 END
-3 REF_BASE
-4 S_BASE
-5 W_BASE
-6 S_READS
-7 W_READS
-=cut
+# 0 CHR
+# 1 START
+# 2 END
+# 3 REF_BASE
+# 4 S_BASE
+# 5 W_BASE
+# 6 S_READS
+# 7 W_READS
 	while( my $line = <$IN> ){
 		chomp $line;
 		my @split   = split( "\t", $line );
@@ -4396,6 +4507,9 @@ sub _build_allele_sequences
 	close SEQ;
 	close OUT;
 
+	# Remove reference file (no longer used)
+	`rm -f $refFile`;
+
 	return $seqFile if -s $seqFile;
 	return 0;
 }
@@ -4432,6 +4546,9 @@ sub _find_matches
 	my @fw_out = `$moods -f $pval_cf $seqFile $fw_motif_list 2>&1 | grep -vP "^(cal|loa|Mat|Hit|Tot|\\n+)" | awk 'NF'`;
 	my @rc_out = `$moods -f $pval_cf $seqFile $rc_motif_list 2>&1 | grep -vP "^(cal|loa|Mat|Hit|Tot|\\n+)" | awk 'NF'`;
 
+	# Remove sequences file (no longer used)
+	`rm -f $seqFile`;
+
 	# Process MOODS output
 	my $fw_moods_out  = _read_moods_output( \@fw_out );
 	my $rc_moods_out  = _read_moods_output( \@rc_out );
@@ -4440,6 +4557,9 @@ sub _find_matches
 	my $fw_matches    = _deconvolute_moods_hits( $fw_moods_out, $motifs, $padding );
 	my $rc_matches    = _deconvolute_moods_hits( $rc_moods_out, $motifs, $padding );
 	my @matches       = ( $fw_matches, $rc_matches );
+
+	# Remove matrix files and canonical sequence fasta files (no longer used)
+	`rm -f *.mat *canonical.fa`;
 
 	return \@matches;
 }
@@ -4550,10 +4670,10 @@ sub _write_match_results
 	open( OUT, ">$tmpFile" ) or
 		die "    Failed to create file: $tmpFile!\n";
 
-	my $PROC       = $self->Open;
-	my $header     = <$PROC>;
+	my $PROC   = $self->Open;
+	my $header = <$PROC>;
 	chomp $header;
-	my @header     = split( "\t", $header );
+	my @header = split( "\t", $header );
 
 	my @hit_header = (
 	 	'MOTIF_NAME',
@@ -4567,8 +4687,7 @@ sub _write_match_results
 		'HIT_NORM_SCORE_1',
 		'HIT_NORM_SCORE_2',
 	);
-	my $insert = 14;
-	splice( @header, $insert, 0, @hit_header );
+	push( @header, @hit_header );
 	print OUT join( "\t", @header ), "\n";
 
 	my $i = 0;
@@ -4630,7 +4749,7 @@ sub _write_match_results
 								sprintf( "%.3f", $n_score1 ),
 								sprintf( "%.3f", $n_score2 ),
 							);
-							splice( @split, $insert, 0, @hit );
+							push( @split, @hit );
 							print OUT join( "\t", @split ), "\n";
 						}
 					}
@@ -4647,7 +4766,7 @@ sub _write_match_results
 							sprintf( "%.3f", $n_score1 ),
 							'0.000',
 						);
-						splice( @split, $insert, 0, @hit );
+						push( @split, @hit );
 						print OUT join( "\t", @split ), "\n";
 					}
 				}
@@ -4660,7 +4779,7 @@ sub _write_match_results
 	close OUT;
 
 	`head -n1 $tmpFile > $hitFile`;
-	`tail -n +2 $tmpFile | sort -Vk1,1 -k2,2n >> $hitFile`;
+	`tail -n +2 $tmpFile | sort -nrk15,15 -k1,1V -k2,2n >> $hitFile`;
 	`rm -f $tmpFile`;
 
 	return 1;
@@ -4669,244 +4788,106 @@ sub _write_match_results
 sub annotate
 {
 	my $self     = shift;
-	my $value    = shift;
-	my $adFields = shift;
-	my $datBed   = $self->get_file;
-	my $hitBed   = $self->get_hitFile;
-	my $outDir   = $self->get_outDir;
-	my $fields   = 15; # Number of fields in ADB file without annotation
-	my $time0    = time;
+	my $aFile    = shift;
+	my $Config   = shift;
+	my $bedtools = $Config->get_value('BEDTOOLS');
+	my $chroms   = $Config->get_value('CHROMOSOMES');
+	my $bFiles   = $Config->get_value('ANNO_FILES');
 
-	if( $value !~ /^(DISEASE|GENE)$/ ){
-		print STDOUT "    Could not understand value: $value!\n";
-		return 0;
-	}
-	print STDOUT "  Annotating positions with closest $value ... \n";
+	print STDOUT "  Annotating $aFile\n";
 
-	if( -s $datBed ){
-		print STDOUT "    Annotating DAT file\n";
+	for my $bFile ( @$bFiles ){
+		# Create "a" BED file by removing the header
+		my $aBed     = $aFile . '.bed';
+		`tail -n +2 $aFile | sort -Vk1,1 -k2,2n > $aBed`;
+		# Get "a" header (excluding the first 3 which are coordinates)
+		my $aHeader  = `cut -f4- $aFile | head -n1`; chomp $aHeader;
+		# Count number of fields in header
+		my @aFields  = split( "\t", $aHeader );
+		my $naFields = scalar @aFields;
+		my @annoLines;
 
-		if( $value eq 'DISEASE' ){
-			$self->_annotate_disease( $datBed, $fields );
+		# Create "b" BED file by removing the header
+		my $bBed = $bFile;
+		$bBed    =~ s/^.*\///;
+		`tail -n +2 $bFile | sort -Vk1,1 -k2,2n > $bBed`;
+
+		# Get "b" header (excluding the first 3 which are coordinates)
+		my $bHeader  = `cut -f4- $bFile | head -n1`; chomp $bHeader;
+		# Count number of fields in header
+		my @bFields  = split( "\t", $bHeader );
+		my $nbFields = scalar @bFields;
+
+		# Find closest feature using "bedtools closest"
+		for my $chrom ( @$chroms ){
+			my $acBed = "$aBed.$chrom";
+			my $bcBed = "$bBed.$chrom";
+			`grep -P "^$chrom\t" $aBed > $acBed`;
+			`grep -P "^$chrom\t" $bBed > $bcBed`;
+			next if !-s $acBed;
+
+			my @chrLines;
+			if( -s $bcBed ){
+				my $s     = $naFields + 3;
+				my $e     = $s + 4;
+				@chrLines = `$bedtools closest -D "a" -a $acBed -b $bcBed | cut -f1-$s,$e- 2> /dev/null`;
+			}
+			else{
+				my $dummy = join( "\t", ('na') x $nbFields );
+				@chrLines = `awk '{print \$0,"$dummy"}' OFS='\\t' $acBed`;
+			}
+			push( @annoLines, @chrLines );
 		}
-		elsif( $value eq 'GENE' ){
-			$self->_annotate_genes( $datBed, $fields + $adFields );
-		}
-	}
-	elsif( -s $hitBed ){
-		print STDOUT "    Annotating HIT file\n";
-		# Add 10 fields from the hit annotation
-		$fields += 10;
+		# Remove temporary BED files (no longer used)
+		`rm -f $aBed.chr* $bBed.chr* $bBed`;
 
-		if( $value eq 'DISEASE' ){
-			$self->_annotate_disease( $hitBed, $fields );
-		}
-		elsif( $value eq 'GENE' ){
-			$self->_annotate_genes( $hitBed, $fields + $adFields );
-		}
-	}
-	else{
-		print STDOUT "    No files to annotate found!\n";
-		return 0;
-	}
+		# Attach annotation to aBed lines
+		my $tmpOut = "tmpAnnoLines.asb";
+		open( OUT, ">$tmpOut" ) or
+			die "ERROR: Could not create file $tmpOut\n";
 
+		# Print annotated header
+		my @header = (
+			'CHR',
+			'START',
+			'END',
+			$aHeader,
+			$bHeader,
+			'DIST',
+			'ABS_DIST',
+		);
+		print OUT join( "\t", @header ), "\n";
+
+		for my $line ( @annoLines ){
+			chomp $line;
+			my @split      = split( "\t", $line );
+			my $snpDist    = $split[-1];
+			my $absSnpDist = 'na';
+			$absSnpDist    = abs $snpDist if $snpDist ne 'na';
+
+			print OUT "$line\t$absSnpDist\n";
+		}
+		close OUT;
+
+		if( -s $tmpOut ){
+			my $bBase = $bFile;
+			$bBase    =~ s/.*\///;
+			print STDOUT "  Annotated (file: $bBase)\n";
+
+			# Sort file in descending order by ARS values
+			`head -n1 $tmpOut > $aFile`;
+			`tail -n +2 $tmpOut | sort -nrk15,15 -k1,1V -k2,2n >> $aFile`;
+			`rm -f $tmpOut $aBed`;
+		}
+		else{
+			print STDOUT "    Failed!\n";
+			`rm -f $aFile $tmpOut $aBed`;
+			return 0;
+		}
+	}
 	my $time1   = time;
 	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
 	print STDOUT "  Time elapsed: $elapsed min\n";
-
-	return 1;
-}
-
-sub _annotate_disease
-{
-	my $self     = shift;
-	my $aBed     = shift;
-	my $fields   = shift;
-	my $Config   = $self->{'config'};
-	my $bBed     = $Config->get_value( 'DISANNO_FILE' );
-	my $bedtools = $Config->get_value('BEDTOOLS');
-	my $chroms   = $Config->get_value('CHROMOSOMES');
-	my $annoFile = $aBed . '.anno';
-
-	# Find closest disease SNP on each chromosome
-	# annoLine:
-	# rs61766198;Inflammatory_bowel_disease-EU;1;0	127
-	my @annoLines;
-
-	for my $chrom ( @$chroms ){
-		my $acBed = "$aBed.$chrom";
-		my $bcBed = "$bBed.$chrom";
-		`grep -P "^$chrom\t" $aBed > $acBed`;
-		`grep -P "^$chrom\t" $bBed > $bcBed`;
-		next if !-s $acBed;
-
-		my @lines;
-		if( -s $bcBed ){
-			@lines = `$bedtools closest -D "a" -a $acBed -b $bcBed 2> /dev/null`;
-		}
-		else{
-			my $dummy = "na;na;na;na\tna";
-			my $num   = `cat $acBed | wc -l`;
-
-			for( my $i = 0; $i < $num ; $i++ ){
-				push( @lines, $dummy );
-			}
-		}
-		push( @annoLines, @lines );
-	}
-	chomp @annoLines;
-	# Remove chromosome files
-	`rm -f $aBed.chr* $bBed.chr*`;
-
-	# Attach annotation to aBed lines
-	open( OUT, ">$annoFile" ) or
-		die "ERROR: Could not create file $annoFile\n";
-
-	my $header = `head -n1 $aBed`; chomp $header;
-	my @hSplit = split( "\t", $header );
-	my @header = splice( @hSplit, 0, $fields );
-	my @hAnno  = (
-		'DISEASE',
-		'AUTOIMMUNE',
-		'AUTOINFLAMMATORY',
-		'DIS_SNP_ID',
-		'DIS_SNP_DIST',
-		'DIS_SNP_ABS_DIST',
-	);
-	my @hOut = ( @header, @hAnno );
-	print OUT join( "\t", @hOut ), "\n";
-
-	for my $line ( @annoLines ){
-		chomp $line;
-		my @split   = split( "\t", $line );
-		my @aFields = splice( @split, 0, $fields );
-		my( $anno, $snpDist ) = splice( @split, -2 );
-		my(
-			$snpId,
-			$disease,
-			$autoimmune,
-			$autoinflam,
-		) = split( /[;\t]/, $anno );
-		my $absSnpDist = 'na';
-		$absSnpDist    = abs $snpDist if $snpDist ne 'na';
-		push( @aFields, $disease );
-		push( @aFields, $autoimmune );
-		push( @aFields, $autoinflam );
-		push( @aFields, $snpId );
-		push( @aFields, $snpDist );
-		push( @aFields, $absSnpDist );
-
-		print OUT join( "\t", @aFields ), "\n";
-	}
-	close OUT;
-
-	if( -s $annoFile ){
-	 	print STDOUT "    Diseases annotated succesfully\n";
-		# Rename annotated file
-		`mv -f $annoFile $aBed`;
-	}
-	else{
-	 	print STDOUT "    Failed!\n";
-		`rm -f $annoFile`;
-		return 0;
-	}
-
-	return 1;
-}
-
-sub _annotate_genes
-{
-	my $self     = shift;
-	my $aBed     = shift;
-	my $fields   = shift;
-	my $Config   = $self->{'config'};
-	my $bBed     = $Config->get_value( 'GENANNO_FILE' );
-	my $bedtools = $Config->get_value('BEDTOOLS');
-	my $chroms   = $Config->get_value('CHROMOSOMES');
-	# Set max number of columns that will be kept and appended with the annotation
-	my $annoFile = $aBed . '.anno';
-
-	# Remove header
-	`tail -n +2 $aBed > $aBed.tmp`;
-	# Find closest disease SNP
-	# annoLine:
-	# DDX11L1	+	E1	54
-	my @annoLines;
-
-	for my $chrom ( @$chroms ){
-		my $acBed = "$aBed.$chrom";
-		my $bcBed = "$bBed.$chrom";
-		`grep -P "^$chrom\t" $aBed > $acBed`;
-		`grep -P "^$chrom\t" $bBed > $bcBed`;
-		next if !-s $acBed;
-
-		my @lines;
-		if( -s $bcBed ){
-			@lines = `$bedtools closest -D "a" -a $acBed -b $bcBed 2> /dev/null`;
-		}
-		else{
-			my $dummy = "na\tna\tna\tna";
-			my $num   = `cat $acBed | wc -l`;
-
-			for( my $i = 0; $i < $num ; $i++ ){
-				push( @lines, $dummy );
-			}
-		}
-		push( @annoLines, @lines );
-	}
-	chomp @annoLines;
-	# Remove chromosome files
-	`rm -f $aBed.chr* $bBed.chr*`;
-
-	# Attach annotation to aBed lines
-	open( OUT, ">$annoFile" ) or
-		die "ERROR: Could not create file $annoFile\n";
-
-	my $header = `head -n1 $aBed`; chomp $header;
-	my @hSplit = split( "\t", $header );
-	my @header = splice( @hSplit, 0, $fields );
-	my @hAnno  = (
-	 	'GENE',
-	 	'DESCRIPTION',
-		'STRAND',
-		'GEN_DIST',
-		'GEN_ABS_DIST',
-	);
-	my @hOut = ( @header, @hAnno );
-	print OUT join( "\t", @hOut ), "\n";
-
-	for my $line ( @annoLines ){
-		chomp $line;
-		my @split   = split( "\t", $line );
-		my @aFields = splice( @split, 0, $fields );
-		my(
-			$geneId,
-			$strand,
-			$feature,
-			$geneDist,
-		) = splice( @split, -4 );
-		my $absGeneDist = 'na';
-		$absGeneDist    = abs $geneDist if $geneDist ne 'na';
-		push( @aFields, $geneId );
-		push( @aFields, $strand );
-		push( @aFields, $feature );
-		push( @aFields, $geneDist );
-		push( @aFields, $absGeneDist );
-
-		print OUT join( "\t", @aFields ), "\n";
-	}
-	close OUT;
-
-	if( -s $annoFile ){
-	 	print STDOUT "    Genes annotated succesfully\n";
-		# Rename annotated file
-		`mv -f $annoFile $aBed`;
-	}
-	else{
-	 	print STDOUT "    Failed!\n";
-		`rm -f $annoFile`;
-		return 0;
-	}
 
 	return 1;
 }
