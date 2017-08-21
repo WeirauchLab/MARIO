@@ -1306,10 +1306,8 @@ sub _configure
 			if $options->{'q'};
 
 		# Extract FASTQ file from SRA file
-		if( $options->{'a'} or $options->{'d'} ){
-			_require_program( $options, 'FASTQDUMP' );
-			$include{'FASTQDUMP'} = 1;
-		}
+		_require_program( $options, 'FASTQDUMP' );
+		$include{'FASTQDUMP'} = 1;
 
 		# Call peaks
 		if( $options->{'c'} ){
@@ -1369,10 +1367,9 @@ sub _configure
 
 		if( $include{$conf} ){
 			my $value = $options->{$conf};
-#			next if $conf =~ /[abcdfnqrst]/;
 
 			if( defined $value ){
-				unless( $conf =~ /ANNO_FILES/ ){
+				unless( $conf =~ /ANNO_FILES|[abcdfnqrst]/ ){
 					printf STDOUT ( "%14s: %s\n", $conf, $value );
 				}
 
@@ -1845,18 +1842,14 @@ sub generate
 	print STDOUT "  Generating with --split-files option ...\n";
 	my $time0   = time;
 
-	my $fastq1  = $sra;
-	$fastq1     =~ s/(.sra)*$/_1.fastq.gz/;
-	$fastq1     =~ s/^.*\//$outDir\//;
-	my $fastq2  = $sra;
-	$fastq2     =~ s/(.sra)*$/_2.fastq.gz/;
-	$fastq2     =~ s/^.*\//$outDir\//;
+	my $fastq1  = "$outDir/$sra\_1.fastq.gz";
+	my $fastq2  = "$outDir/$sra\_2_fastq.gz";
 
 	# Get FASTQ files
 	if( !-s $fastq1 ){
 		`$fastqDump --split-files --gzip $sra -O $outDir 2> /dev/null`;
-		die "ERROR: Failed to generate FASTQ files\n"
-			unless -s $fastq1;
+
+		die "ERROR: Failed to generate FASTQ files\n" unless -s $fastq1;
 	}
 
 	# Check for validity of FASTQ sequences after splitting
@@ -1870,7 +1863,7 @@ sub generate
 		print STDOUT "  Trying again without --split-files option ...\n";
 		# Get FASTQ files
 		`$fastqDump --gzip $sra -O $outDir 2> /dev/null`;
-		$fastq1 =~ s/_1.fastq/.fastq/;
+		$fastq1 =~ s/_1//;
 	}
 
 	$numFiles = `ls $outDir/*.fastq.gz 2> /dev/null | wc -l`;
@@ -1952,10 +1945,10 @@ sub new
 	my $fastq2;
 
 	if( $Fastq ){
-		my $fastq1    = $Fastq->get_file1;
-		my $fastq2    = $Fastq->get_file2;
-		my $base      = $Fastq->get_base1;
-		$file         = "$outDir/$base.bam" unless $file;
+		$fastq1  = $Fastq->get_file1;
+		$fastq2  = $Fastq->get_file2;
+		my $base = $Fastq->get_base1;
+		$file    = "$outDir/$base.bam" unless $file;
 	}
 	die "ERROR: Please provide an argument for 'file' or 'fastq'\n"
 		unless $file;
