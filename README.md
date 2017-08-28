@@ -91,39 +91,39 @@ _Hint: running `MARIO -h` produces a help screen, which you can then pipe throug
 
 ### Download and generate FASTQ files from SRR ID
 
-    MARIO -I SRR1608989 -C config_3.2.txt
+    MARIO -I SRR1608989 -C config_3.3.0.txt
 
 ### ChIP-seq experiments or similar:
 
-#### Align FASTQ reads to hg19 genome (starting from downloaded SRA file)
+#### Align FASTQ reads to hg19 genome (starting from SRA file)
 
-    MARIO -aI SRR1608989.sra -C config_3.2.txt -X path_to_BOWTIE2_aligner_index_files/hg19
+    MARIO -aI SRR1608989.sra -C config_3.3.0.txt -uX path_to_BOWTIE2_aligner_index_files/hg19
 
 ### RNA-seq experiments:
 
-#### Align FASTQ reads to hg19 genome (starting from downloaded SRA file)
+#### Align FASTQ reads to hg19 genome (starting from SRA file)
 
-    MARIO -aI SRR1608989.sra -C config_3.2.txt -sX path_to_STAR_aligner_index_files
+    MARIO -aI SRR1608989.sra -C config_3.3.0.txt -sX path_to_STAR_aligner_index_files
     
-    MARIO -aI SRR1608989.sra -C config_3.2.txt -tX path_to_HISAT2_aligner_index_files/hg19
+    MARIO -aI SRR1608989.sra -C config_3.3.0.txt -tX path_to_HISAT2_aligner_index_files/hg19
 
 ### Align to genome using paired-end reads
 
-    MARIO -aF SRR1_1.fq.gz:SRR1_2.fq.gz -C config_3.2.txt -sX \
+    MARIO -aF SRR1_1.fq.gz:SRR1_2.fq.gz -C config_3.3.0.txt -sX \
       path_to_STAR_aligner_index_files
 
 ### Align to genome using single and paired-end reads from different experiments
 
-    MARIO -aF SRR1_1.fq.gz:SRR1_2.fq.gz,SRR2.fq.gz -C config_3.2.txt -sX \
+    MARIO -aF SRR1_1.fq.gz:SRR1_2.fq.gz,SRR2.fq.gz -C config_3.3.0.txt -sX \
       path_to_STAR_aligner_index_files
 
 ### Call peaks on BAM files
 
-    MARIO -cA SRR1.bam,SRR2.bam -C config_3.2.txt
+    MARIO -cA SRR1.bam,SRR2.bam -C config_3.3.0.txt
 
 ### Find ADBs from BAM files
 
-    MARIO -dA SRR1.bam,SRR2.bam -C config_3.2.txt -G path_to_genotyping_file/hetpos.txt
+    MARIO -dA SRR1.bam,SRR2.bam -C config_3.3.0.txt -G path_to_genotyping_file/hetpos.txt
 
 ## Scheme of the MARIO pipeline
 
@@ -189,8 +189,9 @@ Priority of input files:
 -p  Number of threads (default: use all available threads)
 -q  Perform quality control on FASTQ files
 -r  Keep duplicate reads
--s  Input data is RNA-seq (STAR alignment)
--t  Input data is RNA-seq (HISAT2 alignment)
+-u  Perform aligment with BOWTIE2 (suitable for ChIP-seq)
+-s  Perform alignment with STAR (suitable for RNA-seq)
+-t  Perform alignment with HISAT2 (suitable for RNA-seq)
 ```
 
 ### Output files:
