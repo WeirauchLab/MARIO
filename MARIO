@@ -374,24 +374,27 @@ sub process_bam_file
 			bamFile => $Alignment->get_file,
 			config  => $Config,
 		);
-		$Peaks->call_peaks;
-		$Peaks->split_peaks_by_chr;
+		my $pStatus = $Peaks->call_peaks;
 
-		# Split BAM file by chromosomes to allow counting reads under peaks
-		$Alignment->split_bam_by_chr;
-		$Config->set_value( 'SP', 1 );
+		if( $pStatus ){
+			$Peaks->split_peaks_by_chr;
 
-		# Count reads under peaks using chrom-split BAM files
-		$Peaks->count_reads_under_peak( $Alignment->get_chr_files );
+			# Split BAM file by chromosomes to allow counting reads under peaks
+			$Alignment->split_bam_by_chr;
+			$Config->set_value( 'SP', 1 );
 
-		# Save BED files
-		$bFile = $Peaks->get_file;
-		unless( $Config->get_value('SAVE_BED') ){
-			`rm -f $bFile 2> /dev/null`;
+			# Count reads under peaks using chrom-split BAM files
+			$Peaks->count_reads_under_peak( $Alignment->get_chr_files );
+
+			# Save BED files
+			$bFile = $Peaks->get_file;
+			unless( $Config->get_value('SAVE_BED') ){
+				`rm -f $bFile 2> /dev/null`;
+			}
+			# Remove per chromosome BED files (no longer used)
+			my $outDir = $Config->get_value('O');
+			`rm -f $outDir/chr*.bed 2> /dev/null`;
 		}
-		# Remove per chromosome BED files (no longer used)
-		my $outDir = $Config->get_value('O');
-		`rm -f $outDir/chr*.bed 2> /dev/null`;
 	}
 
 	return $Alignment;
@@ -458,43 +461,6 @@ sub process_allelic_behavior
 	else{
 		return 0;
 	}
-}
-
-sub add_cse_column
-{
-	my $file   = shift;
-	my $output = $file . ".tmp";
-	open( IN, $file ) or
-	(
-	 	print STDOUT "  ERROR: Could not open file $file at 'add_cse_column'\n" and
-		return 0
-	);
-	open( OUT, ">$output" ) or
-		die "ERROR: Could not create file $output at 'add_cse_column'\n";
-
-	my $header = <IN>;
-	chomp $header;
-	my @header = split( "\t", $header );
-	splice( @header, 3, 0, "UCSC_COOR" );
-	print OUT join( "\t", @header ), "\n";
-
-	while( my $line = <IN> )
-	{
-		chomp $line;
-		my @split = split( "\t", $line );
-		my $chr   = $split[0];
-		my $start = $split[1];
-		my $end   = $split[2];
-		my $coor  = "$chr:$start-$end";
-		splice( @split, 3, 0, $coor );
-		print OUT join( "\t", @split ), "\n";
-	}
-
-	`head -n1 $output > $file`;
-	`tail -n +2 $output | sort -u | sort -grk18,18 >> $file`;
-	`rm -f $output`;
-
-	return 1;
 }
 
 #-------------------------------------------------------------------------------
@@ -2273,12 +2239,14 @@ sub _remove_duplicate_reads
 	my $Config   = $self->{'config'};
 	my $picard   = $Config->get_value('PICARD');
 	my $outDir   = $Config->get_value('O');
+	my $bamDedup = "$outDir/$base\_dedup.bam";
+	my $picLog   = "$outDir/$base\_picard.log";
 
-	`$picard I=$bamFile REMOVE_DUPLICATES=true O=$base\_dedup.bam M=$base\_picard.log 2> /dev/null`;
+	`$picard I=$bamFile REMOVE_DUPLICATES=true O=$bamDedup M=$picLog 2> /dev/null`;
 	die "    Failed!\n" if !-s "$base\_dedup.bam";
-	`mv -f $base\_dedup.bam $bamFile 2> /dev/null`;
+	`mv -f $bamDedup $bamFile 2> /dev/null`;
 
-	my $result = `grep -A1 "^LIBRARY" $base\_picard.log | tail -1 | cut -f2,3,5,6,8`;
+	my $result = `grep -A1 "^LIBRARY" $picLog | tail -1 | cut -f2,3,5,6,8`;
 	chomp $result;
 
 	# dups: number of single duplicate reads; pDups: number of paired duplicate reads
@@ -2509,6 +2477,7 @@ sub call_peaks
 		else{
 			# Total failure of peak caller MACS2
 			print STDOUT "    Failed to call peaks!\n";
+			`rm -f $np_file $outDir/$peakBase*.bdg $outDir/$peakBase\_model.r $outDir/$peakBase\_peaks.xls $outDir/$peakBase\_summits.bed`;
 			return 0;
 		}
 
