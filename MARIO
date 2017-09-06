@@ -91,10 +91,6 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 
 		print STDOUT "\e[0;32m[ DONE ]\e[0m\n";
 	}
-	# Continue if BAM files were requested
-	next unless(
-		$Config->get_value('a')
-	);
 
 	#-------------------------------------------------------------------------------
 	# Align reads to genome
@@ -316,6 +312,11 @@ sub process_fastq_file
 	# Quality control on raw reads
 	if( $Config->get_value('q') and ! $Config->get_value('QC') ){
 		$Fastq->quality_control;
+	}
+
+	# Continue if BAM files were requested
+	unless( $Config->get_value('a') ){
+		return 0;
 	}
 
 	# Align reads to genome
