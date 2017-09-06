@@ -1751,7 +1751,7 @@ sub quality_control
 	my $qcDir  = "$outDir/fastqc";
 	`mkdir -p $qcDir`;
 	print STDOUT "  > $fastq1\n";
-	`fastqc --extract -o $qcDir -f fastq $fastq1 2> /dev/null`;
+	`$fastqc --extract -o $qcDir -f fastq $fastq1 2> /dev/null`;
 	my $num = `ls $qcDir/$base2*_fastqc/summary.txt | wc -l 2> /dev/null`;
 
 	if( !$num ){
