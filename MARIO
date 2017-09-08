@@ -1540,7 +1540,8 @@ sub _require_r_group_options
 	# Remove duplicate reads
 	unless( $options->{'r'} ){
 		_require_program( $options, 'PICARD' );
-		$include->{'PICARD'} = 1;
+		$include->{'PICARD'}   = 1;
+		$include->{'SAMTOOLS'} = 1;
 	}
 }
 
