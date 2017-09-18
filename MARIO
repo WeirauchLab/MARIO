@@ -1794,8 +1794,7 @@ sub trim_adapters
 			die "ERROR: Failed to open file $qcLog\n";
 
 		while( my $line = <IN> ){
-#			$fail++ if $line =~ /FAIL\tAdapter Content/;
-			$fail++ if $line =~ /WARN\tAdapter Content/;
+			$fail++ if $line =~ /(WARN|FAIL)\tAdapter Content/;
 		}
 		close IN;
 	}
