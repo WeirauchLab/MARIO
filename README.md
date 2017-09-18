@@ -91,39 +91,39 @@ _Hint: running `MARIO -h` produces a help screen, which you can then pipe throug
 
 ### Download and generate FASTQ files from SRR ID
 
-    MARIO -I SRR1608989 -C config_3.3.0.txt
+    MARIO -I SRR1608989 -C config_3.4.0.txt
 
 ### ChIP-seq experiments or similar:
 
 #### Align FASTQ reads to hg19 genome (starting from SRA file)
 
-    MARIO -aI SRR1608989.sra -C config_3.3.0.txt -uX path_to_BOWTIE2_aligner_index_files/hg19
+    MARIO -I SRR1608989.sra -C config_3.4.0.txt -uX path_to_BOWTIE2_aligner_index_files/hg19
 
 ### RNA-seq experiments:
 
 #### Align FASTQ reads to hg19 genome (starting from SRA file)
 
-    MARIO -aI SRR1608989.sra -C config_3.3.0.txt -sX path_to_STAR_aligner_index_files
+    MARIO -I SRR1608989.sra -C config_3.4.0.txt -sX path_to_STAR_aligner_index_files
     
-    MARIO -aI SRR1608989.sra -C config_3.3.0.txt -tX path_to_HISAT2_aligner_index_files/hg19
+    MARIO -I SRR1608989.sra -C config_3.4.0.txt -tX path_to_HISAT2_aligner_index_files/hg19
 
 ### Align to genome using paired-end reads
 
-    MARIO -aF SRR1_1.fq.gz:SRR1_2.fq.gz -C config_3.3.0.txt -sX \
+    MARIO -F SRR1_1.fq.gz:SRR1_2.fq.gz -C config_3.4.0.txt -sX \
       path_to_STAR_aligner_index_files
 
 ### Align to genome using single and paired-end reads from different experiments
 
-    MARIO -aF SRR1_1.fq.gz:SRR1_2.fq.gz,SRR2.fq.gz -C config_3.3.0.txt -sX \
+    MARIO -F SRR1_1.fq.gz:SRR1_2.fq.gz,SRR2.fq.gz -C config_3.4.0.txt -sX \
       path_to_STAR_aligner_index_files
 
 ### Call peaks on BAM files
 
-    MARIO -cA SRR1.bam,SRR2.bam -C config_3.3.0.txt
+    MARIO -cA SRR1.bam,SRR2.bam -C config_3.4.0.txt
 
 ### Find ADBs from BAM files
 
-    MARIO -dA SRR1.bam,SRR2.bam -C config_3.3.0.txt -G path_to_genotyping_file/hetpos.txt
+    MARIO -dA SRR1.bam,SRR2.bam -C config_3.4.0.txt -G path_to_genotyping_file/hetpos.txt
 
 ## Scheme of the MARIO pipeline
 
@@ -147,6 +147,7 @@ _Hint: running `MARIO -h` produces a help screen, which you can then pipe throug
 |                 +-------+                 |       +=======+       +-------+
 |                                           |
 +-------------------------------------------+
+              BASIC FUNCTIONS                      ALLELE-DEPENDENT FUNCTIONS
 ```
 
 ### Input files:
@@ -215,6 +216,20 @@ Priority of input files:
 
 ## Change log:
 
+### MARIO version 3.4.0
+
+* Added functionality. Trims adapter sequences if QC on reads fails on "Kmer Content"
+* Updated README.md
+
+### MARIO version 3.3.2
+
+* Bug fix. The program fastqc was hard-coded
+* Bug fix. Couldn't do QC on fastq files alone
+* Bug fix. Code not stopping if peak calls failed
+* Bug fix. Fixed FASTQ file naming issues
+* Corrections made to README.md
+* Fixed inconsistensies in README.md
+
 ### MARIO version 3.3.0
 
 * It can now annotate the DAT file with multiple arbitrary bed files
@@ -227,7 +242,7 @@ Priority of input files:
   operations
 * You can now decide whether to annotate ADB file or not, using the `-n` option
 
-### MARIO version 3.1
+### MARIO version 3.1.0
 
 * Added support for gzipped genotyping files
 * Added aligning capabilities with the HISAT2 aligner (not recommended to use
@@ -239,7 +254,7 @@ Priority of input files:
 * It now uses "bedtools closest" to annotate positions with disease SNPs and
   genes
 
-### MARIO version 3.0
+### MARIO version 3.0.0
 
 * Major rearrangement of the logic of the program; now has more control on the
   provided inputs and outputs
