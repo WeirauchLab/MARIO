@@ -218,7 +218,7 @@ Priority of input files:
 
 ### MARIO version 3.4.0
 
-* Added functionality. Trims adapter sequences if QC on reads fails on "Kmer Content"
+* Added functionality. Trims adapter sequences if QC on reads fails on "Adapter Content"
 * Updated README.md
 
 ### MARIO version 3.3.2
