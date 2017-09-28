@@ -5,9 +5,9 @@ use Getopt::Std;
 use Parallel::ForkManager;
 
 my $progName = $0;
-my $version  = '3.4.0';
+my $version  = '3.4.1';
 my $created  = '011017';
-my $modified = '081617';
+my $modified = '092817';
 
 my %options;
 # ABCDFGIMOSX
@@ -1794,7 +1794,7 @@ sub trim_adapters
 			die "ERROR: Failed to open file $qcLog\n";
 
 		while( my $line = <IN> ){
-			$fail++ if $line =~ /(WARN|FAIL)\tAdapter Content/;
+			$fail++ if $line =~ /FAIL\tAdapter Content/;
 		}
 		close IN;
 	}
@@ -1881,7 +1881,7 @@ sub generate
 	# Check for validity of FASTQ sequences after splitting
 	my $status1 = check_fastq_file( $fastq1 );
 	die "ERROR: Invalid FASTQ file 1\n"
-		if !$status1;
+		 unless $status1;
 	my $status2 = check_fastq_file( $fastq2 );
 
 	if( $status2 == 2 ){
@@ -1937,14 +1937,16 @@ sub check_fastq_file
 		chomp $baseCount;
 
 		if( $baseCount > $cutoff ){
+			# FASTQ file is good
 			return 1;
 		}
 		else{
-			# FASTQ file exists, but it's not valid. Therefore, should not use --split-files option)
+			# FASTQ file exists, but it's not valid. Therefore, should not use --split-files optio)
 			return 2;
 		}
 	}
 	else{
+		# FASTQ file does not exist
 		return 0;
 	}
 }
@@ -2206,7 +2208,7 @@ sub sort_bam
 	my $time0   = time;
 
 	`$samtools sort $bamFile $bamFile.sort > /dev/null 2>&1`;
-	print STDOUT "    Failed to sort BAM file!\n" if !-s "$bamFile.sort.bam";
+	print STDOUT "    Failed to sort BAM file!\n" unless -s "$bamFile.sort.bam";
 
 	`mv $bamFile.sort.bam $bamFile`;
 
@@ -2303,7 +2305,7 @@ sub _remove_duplicate_reads
 	my $picLog   = "$outDir/$base\_picard.log";
 
 	`$picard I=$bamFile REMOVE_DUPLICATES=true O=$bamDedup M=$picLog 2> /dev/null`;
-	die "    Failed!\n" if !-s "$base\_dedup.bam";
+	die "    Failed!\n" unless -s $bamDedup;
 	`mv -f $bamDedup $bamFile 2> /dev/null`;
 
 	my $result = `grep -A1 "^LIBRARY" $picLog | tail -1 | cut -f2,3,5,6,8`;
