@@ -265,11 +265,6 @@ sub process_sra
 	);
 	$Fastq->generate( $input );
 
-	# Quality control on raw reads
-	if( $Config->get_value('q') ){
-		$Fastq->quality_control;
-		$Config->set_value( 'QC', 1 );
-	}
 	my $fastq1 = $Fastq->get_file1;
 	my $fastq2 = $Fastq->get_file2;
 
@@ -311,7 +306,7 @@ sub process_fastq_file
 	my $Config = shift;
 
 	# Quality control on raw reads
-	if( $Config->get_value('q') and ! $Config->get_value('QC') ){
+	if( $Config->get_value('q') ){
 		my $qcLogs = $Fastq->quality_control;
 		$Fastq->trim_adapters( $qcLogs );
 	}
@@ -1897,7 +1892,7 @@ sub generate
 		`$fastqDump --split-files --gzip $sraFile -O $outDir 2> /dev/null`;
 
 		die "ERROR: Failed to generate FASTQ files\n" unless -s $fastq1;
-		`rm -f $sra`;
+		`rm -f $sraFile`;
 	}
 
 	# Check for validity of FASTQ sequences after splitting
