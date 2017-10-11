@@ -216,6 +216,11 @@ Priority of input files:
 
 ## Change log:
 
+### MARIO version 3.5.0
+
+* Downloads SRA files via FTP site using wget
+  Before was downloaded via fastq-dump, but was too slow
+
 ### MARIO version 3.4.0
 
 * Added functionality. Trims adapter sequences if QC on reads fails on "Adapter Content"
