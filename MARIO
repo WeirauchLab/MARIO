@@ -1476,7 +1476,9 @@ sub _require_c_group_options
 	$include->{'a'} = 1;
 
 	_require_program( $options, 'MACS2' );
+	_require_program( $options, 'SAMTOOLS' );
 
+	$include->{'SAMTOOLS'}    = 1;
 	$include->{'CHROMOSOMES'} = 1;
 	$include->{'MACS2'}       = 1;
 	$include->{'PEAK_EXT'}    = 1;
@@ -2179,7 +2181,7 @@ sub align_to_genome
 		$self->{'file'}    = $bamFile;
 	}
 	else{
-		die "ERROR: Failed aligning reads\n";
+		die "Reads aligned: 0 out of $totalReads\n";
 	}
 
 	my $time1   = time;
