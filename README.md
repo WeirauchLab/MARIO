@@ -200,14 +200,13 @@ Priority of input files:
 ```
 (BED) If the -c option is given, MACS2 called peaks are produced as a BED file.
       The BED file has 4 additional columns (6 through 9):
-        6. Number of reads under the peak
-        7. RPKM, measured as the number of reads divided by the peak width,
+        6.  Number of reads under the peak
+        7.  RPKM, measured as the number of reads divided by the peak width,
             multiplied by 1,000,000 divided by the total number of reads under
             all peaks
-        8. TIER1 flag. If 1, the peak passed the minimum RPKM requirement of
-            0.4
-        9. TIER2 flag. If 1, the peak passed the minimum peak width requirement
-            of 200bp
+        8.  TIER1 flag. If 1, the peak passed the minimum peak RPKM  requirement
+        9.  TIER2 flag. If 1, the peak passed the minimum peak width requirement
+        10. TIER3 flag. If 1, the peak passed the minimum peak reads requirement
 (ADB) Allele-dependent behavior at each heterozygous positions, including
       reproducibility score (ARS) and annotations.
 (HIT) If motif files are given, the ADB file is further annotated with motif

@@ -779,8 +779,9 @@ MOODS_PVAL  = 0.01  # P-value cutoff for the program MOODS (recommended: 0.01)
 MIN_SCORE   = 0.5   # Minimum normalized motif match score to report (it applies to the strong allele)
 
 # Optional configuration parameters
-PEAK_RPKM   = 0.4   # Minimum RPKM value used to remove spurious peaks
-PEAK_WIDTH  = 200   # Minimum peak width used to remove spurious peaks
+PEAK_RPKM   = 0.4   # Minimum RPKM value used to remove spurious peaks (TIER1 filter)
+PEAK_WIDTH  = 200   # Minimum peak width used to remove spurious peaks (TIER2 filter)
+PEAK_READS  = 20    # Minimum peak reads used to remove spurious peaks (TIER3 filter)
 PEAK_EXT    = 50    # Number of base pairs to extend called peaks on both sides
                     # MACS2 calls peaks using medium height or something similar, therefore this ensures that peak tails are included
 
@@ -2660,6 +2661,7 @@ sub count_reads_under_peak
 	my $extend    = $Config->get_value('PEAK_EXT');
 	my $minRpkm   = $Config->get_value('PEAK_RPKM');
 	my $minWidth  = $Config->get_value('PEAK_WIDTH');
+	my $minReads  = $Config->get_value('PEAK_READS');
 	my $samtools  = $Config->get_value('SAMTOOLS');
 	my $chroms    = $Config->get_value('CHROMOSOMES');
 	my $proc      = $Config->get_value('p');
@@ -2814,8 +2816,10 @@ sub count_reads_under_peak
 		# Flags for stringent filtering options
 		my $tier1 = 0; # Flag for RPKM filtering
 		my $tier2 = 0; # Flag for peak width filtering
+		my $tier3 = 0; # Flag for peak reads filtering
 		$tier1    = 1 if $rpkm  >= $minRpkm;
 		$tier2    = 1 if $width >= $minWidth;
+		$tier3    = 1 if $reads >= $minReads;
 
 		my @output = (
 			$line,
@@ -2823,6 +2827,7 @@ sub count_reads_under_peak
 			$rpkm,
 			$tier1,
 			$tier2,
+			$tier3,
 		);
 		print OUT join( "\t", @output ), "\n";
 	}
