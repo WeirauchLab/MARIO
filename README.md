@@ -202,8 +202,8 @@ Priority of input files:
       The BED file has 4 additional columns (6 through 9):
         6.  Number of reads under the peak
         7.  RPKM, measured as the number of reads divided by the peak width,
-            multiplied by 1,000,000 divided by the total number of reads under
-            all peaks
+             multiplied by 1,000,000 divided by the total number of reads under
+             all peaks
         8.  TIER1 flag. If 1, the peak passed the minimum peak RPKM  requirement
         9.  TIER2 flag. If 1, the peak passed the minimum peak width requirement
         10. TIER3 flag. If 1, the peak passed the minimum peak reads requirement
