@@ -2278,6 +2278,10 @@ sub remove_duplicates
 	my $Config   = $self->{'config'};
 	my $samtools = $Config->get_value('SAMTOOLS');
 	my $outDir   = $Config->get_value('O');
+	my $proc     = $Config->get_value('p');
+	if( $proc > 1 ){
+		$proc--;
+	}
 
 	print STDOUT "  Removing duplicate reads ...\n";
 
@@ -2285,7 +2289,7 @@ sub remove_duplicates
 	my $out = `$samtools view -H $bamFile | grep -oP "SO:\\w+"`;
 	if( ! $out or $out =~ /unsorted/ ){
 		print STDOUT "    Sorting BAM file\n";
-		`$samtools sort $bamFile -o $bamFile.sorted.bam 2> /dev/null`;
+		`$samtools sort $bamFile -\@$proc -o$bamFile.sorted.bam -T$base 2> /dev/null`;
 		`mv -f $bamFile.sorted.bam $bamFile 2> /dev/null`;
 	}
 	my $time0   = time;
