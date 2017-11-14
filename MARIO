@@ -2141,11 +2141,11 @@ sub align_to_genome
 		# Run HISAT2 aligner
 		if( !-s $bamFile ){
 			`$hisat2 -p $proc $modifiers -x $index $fastqs 2> $log_file | $samtools view -bS - > $bamFile 2> /dev/null`;
-			$totalReads = `head -n1 $log_file | sed 's|^ *||' | cut -d' ' -f1`; chomp $totalReads;
+			$totalReads = `grep "reads; of these:" $log_file | sed 's|^ *||' | cut -d' ' -f1`; chomp $totalReads;
 			$numAligned = `grep -A1 "exactly" $log_file | sed 's|^ *||' | cut -d' ' -f1 | paste -sd+ | bc`; chomp $numAligned;
 		}
 		else{
-			$totalReads = `head -n1 $log_file | sed 's|^ *||' | cut -d' ' -f1`; chomp $totalReads;
+			$totalReads = `grep "reads; of these:" $log_file | sed 's|^ *||' | cut -d' ' -f1`; chomp $totalReads;
 			$numAligned = `grep -A1 "exactly" $log_file | sed 's|^ *||' | cut -d' ' -f1 | paste -sd+ | bc`; chomp $numAligned;
 		}
 	}
@@ -2165,11 +2165,11 @@ sub align_to_genome
 		# Run BOWTIE2 aligner
 		if( !-s $bamFile ){
 			`$bowtie2 -p $proc $modifiers -x $index $fastqs 2> $log_file | $samtools view -bS - > $bamFile 2> /dev/null`;
-			$totalReads = `head -n1 $log_file | sed 's|^ *||' | cut -d' ' -f1`; chomp $totalReads;
+			$totalReads = `grep "reads; of these:" $log_file | sed 's|^ *||' | cut -d' ' -f1`; chomp $totalReads;
 			$numAligned = `grep -A1 "exactly" $log_file | sed 's|^ *||' | cut -d' ' -f1 | paste -sd+ | bc`; chomp $numAligned;
 		}
 		else{
-			$totalReads = `head -n1 $log_file | sed 's|^ *||' | cut -d' ' -f1`; chomp $totalReads;
+			$totalReads = `grep "reads; of these:" $log_file | sed 's|^ *||' | cut -d' ' -f1`; chomp $totalReads;
 			$numAligned = `grep -A1 "exactly" $log_file | sed 's|^ *||' | cut -d' ' -f1 | paste -sd+ | bc`; chomp $numAligned;
 		}
 	}
