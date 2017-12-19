@@ -13,7 +13,7 @@ my %options;
 # ABCDFGIMOSX
 # abcdfhnmopqrstxyz
 # available: egkluv
-getopts('I:F:A:D:M:B:C:X:O:G:p:hfabdcqorstumxyz', \%options);
+getopts('I:F:A:D:M:B:C:X:O:G:p:hfabdclqorstumxyz', \%options);
 
 # Display help
 if( ! %options ){
@@ -68,6 +68,16 @@ my $time0 = time;
 my $itype  = $Config->get_value('itype');
 my @inputs = split( ',', $Config->get_value($itype) );
 my $iNum   = scalar @inputs;
+
+# Limit input files if more than 6 are given
+# Take 6 random inputs
+if( $options{'l'} and $iNum > 6 ){
+	use List::Util qw(shuffle);
+
+	my $shuffled = shuffle @inputs;
+	@inputs      = splice( @shuffled, 0, 6 );
+	$iNum        = scalar @inputs;
+}
 
 # Make the @bedFiles array recyclable for all BAM files
 my $bedFiles = make_recycling_bedFiles( $Config, $iNum )
@@ -761,7 +771,7 @@ ANNO_2 = /home/mario/Databases/Hsap/hg19/hg19_exons_anno.bed
 # Chromosomes to consider (comma-separated list):
 # Comment out the desired \'CHROMOSOMES\' line
 # Human
-CHROMOSOMES = chr1,chr2,chr3,chr4,chr5,chr6,chr7,chr8,chr9,chr10,chr11,chr12,chr13,chr14,chr15,chr16,chr17,chr18,chr19,chr20,chr21,chr22,chrX,chrY
+CHROMOSOMES = chr1,chr2,chr3,chr4,chr5,chr6,chr7,chr8,chr9,chr10,chr11,chr12,chr13,chr14,chr15,chr16,chr17,chr18,chr19,chr20,chr21,chr22,chrX,chrY,chrM
 # Mouse
 #CHROMOSOMES = chr1,chr2,chr3,chr4,chr5,chr6,chr7,chr8,chr9,chr10,chr11,chr12,chr13,chr14,chr15,chr16,chr17,chr18,chr19,chrX,chrY
 # Zebrafish
