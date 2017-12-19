@@ -74,7 +74,7 @@ my $iNum   = scalar @inputs;
 if( $options{'l'} and $iNum > 6 ){
 	use List::Util qw(shuffle);
 
-	my $shuffled = shuffle @inputs;
+	my @shuffled = shuffle @inputs;
 	@inputs      = splice( @shuffled, 0, 6 );
 	$iNum        = scalar @inputs;
 }
