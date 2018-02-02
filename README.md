@@ -185,6 +185,9 @@ Priority of input files:
 -O  Name of output folder (all files are saved here)
 -c  Call peaks
 -b  Do not require het-SNPs to fall within peaks
+-i  Integrate or concatenate multiple FASTQ files (input with -I of -F options)
+      Sometimes a single FASTQ file is split into multiple ones in GEO for a
+     single experiment
 -n  Annotate ADB results
       It will use the GENANNO_FILE and/or DISANNO_FILE specified in config file
 -p  Number of threads (default: use all available threads)

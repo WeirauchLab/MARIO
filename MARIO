@@ -5,15 +5,15 @@ use Getopt::Std;
 use Parallel::ForkManager;
 
 my $progName = $0;
-my $version  = '3.5.0';
+my $version  = '3.6.0';
 my $created  = '011017';
 my $modified = '101117';
 
 my %options;
-# ABCDFGIMOSX
+# EHKLNPQRSTUVWYZ
 # abcdfhnmopqrstxyz
-# available: egkluv
-getopts('I:F:A:D:M:B:C:X:O:G:p:hfabdclqorstumxyz', \%options);
+# available: egklnvw
+getopts('I:F:A:D:M:B:C:X:O:G:p:abcdfhimoqrstuxyz', \%options);
 
 # Display help
 if( ! %options ){
@@ -69,14 +69,63 @@ my $itype  = $Config->get_value('itype');
 my @inputs = split( ',', $Config->get_value($itype) );
 my $iNum   = scalar @inputs;
 
-# Limit input files if more than 6 are given
-# Take 6 random inputs
-if( $options{'l'} and $iNum > 6 ){
-	use List::Util qw(shuffle);
+if( $options{'i'} ){
+	my $outDir  = $Config->get_value('O');
 
-	my @shuffled = shuffle @inputs;
-	@inputs      = splice( @shuffled, 0, 6 );
-	$iNum        = scalar @inputs;
+	# Download multiple SRA files and converte them to FASTQ
+	if( $Config->get_value('I') ){
+		print STDOUT "Processing SRA\n";
+		my @fastqFiles;
+
+		for( my $i = 0; $i < $iNum; $i++ ){
+			my $input = $inputs[$i];
+			print STDOUT "  > $input\n";
+
+			$input = process_sra( $input, $Config );
+			push( @fastqFiles, $input );
+		}
+		@inputs = @fastqFiles;
+		$iNum   = scalar @inputs;
+		$Config->set_value( 'F', \@inputs );
+
+		print STDOUT "\e[0;32m[ DONE ]\e[0m\n";
+	}
+
+	# Merged/Concatenate multiple FASTQ files into one
+	if( $Config->get_value('F') ){
+		print STDOUT "Concatenating FASTQ files\n";
+		my $mergedFastq1 = "$outDir/merged_1.fastq.gz";
+		my $mergedFastq2 = "$outDir/merged_2.fastq.gz";
+
+		for( my $i = 0; $i < $iNum; $i++ ){
+			print STDOUT "  > $inputs[$i]\n";
+			my( $input1, $input2 ) = split( ':', $inputs[$i] );
+			die "ERROR: File $input1 does not exist or it's empty\n"
+				unless -s $input1;
+
+			`zcat $input1 | gzip >> $mergedFastq1` if $input1 =~ /gz$/;
+			`cat $input1  | gzip >> $mergedFastq1` if $input1 !~ /gz$/;
+
+			if( $input2 ){
+				die "ERROR: File $input2 does not exist or it's empty\n"
+					unless -s $input2;
+				`zcat $input2 | gzip >> $mergedFastq2` if $input2 =~ /gz$/;
+				`cat $input2  | gzip >> $mergedFastq2` if $input2 !~ /gz$/;
+
+				$Config->set_value( 'F', "$mergedFastq1:$mergedFastq2" );
+			}
+			else{
+				$Config->set_value( 'F', $mergedFastq1 );
+			}
+
+			# Save FASTQ files (no longer in use)
+			if( !$Config->get_value('SAVE_FASTQ') ){
+				`rm -f $input1 2> /dev/null`;
+				`rm -f $input2 2> /dev/null` if $input2;
+			}
+		}
+		print STDOUT "\e[0;32m[ DONE ]\e[0m\n";
+	}
 }
 
 # Make the @bedFiles array recyclable for all BAM files
@@ -561,6 +610,11 @@ sub print_usage
 
     SWITCHES
       -h  This help message
+
+      -i  Integrate/Concatenate multiple FASTQ files into one before alignment
+            NOTE: It only works if either a list of SRA or FASTQ files is given
+            This might be useful when a single GSM id points to multiple SRR ids,
+            which are a single FASTQ file split into multiple SRA files
 
       -a  Align FASTQ files to genome
       -d  Find ADBs (generates DAT files -raw ADBs-)
