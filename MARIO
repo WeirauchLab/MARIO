@@ -65,21 +65,21 @@ my $time0 = time;
 
 # Get input type together with correct files
 #-------------------------------------------------------------------------------
-my $itype  = $Config->get_value('itype');
-my @inputs = split( ',', $Config->get_value($itype) );
+my $iType  = $Config->get_value('iType');
+my @inputs = split( ',', $Config->get_value($iType) );
 my $iNum   = scalar @inputs;
 
 if( $options{'i'} ){
 	my $outDir  = $Config->get_value('O');
+	print STDOUT "Concatenation of input files requested\n";
 
 	# Download multiple SRA files and converte them to FASTQ
 	if( $Config->get_value('I') ){
-		print STDOUT "Processing SRA\n";
 		my @fastqFiles;
 
 		for( my $i = 0; $i < $iNum; $i++ ){
 			my $input = $inputs[$i];
-			print STDOUT "  > $input\n";
+			print STDOUT "  > Downloading $input\n";
 
 			$input = process_sra( $input, $Config );
 			push( @fastqFiles, $input );
@@ -93,7 +93,7 @@ if( $options{'i'} ){
 
 	# Merged/Concatenate multiple FASTQ files into one
 	if( $Config->get_value('F') ){
-		print STDOUT "Concatenating FASTQ files\n";
+		print STDOUT "  > Concatenating FASTQ files\n";
 		my $mergedFastq1 = "$outDir/merged_1.fastq.gz";
 		my $mergedFastq2 = "$outDir/merged_2.fastq.gz";
 
@@ -126,6 +126,10 @@ if( $options{'i'} ){
 		}
 		print STDOUT "\e[0;32m[ DONE ]\e[0m\n";
 	}
+	$Config->set_value( 'I', 0 );
+	$iType  = 'F';
+	@inputs = split( ',', $Config->get_value($iType) );
+	$iNum   = scalar @inputs;
 }
 
 # Make the @bedFiles array recyclable for all BAM files
@@ -136,7 +140,7 @@ my @datFiles;
 for( my $i = 1; $i <= $iNum; $i++ ){
 	my $input = $inputs[$i-1];
 	my $bFile = $bedFiles->[$i-1] || 0;
-	print STDOUT "\n>> Processing input \'$itype\' ($i/$iNum)\n";
+	print STDOUT "\n>> Processing input \'$iType\' ($i/$iNum)\n";
 
 	#-------------------------------------------------------------------------------
 	# Create FASTQ files from SRA files
@@ -1378,7 +1382,7 @@ sub _configure
 		}
 	}
 	#-------------------------
-	$self->{'configuration'}{'itype'} = $inputFile;
+	$self->{'configuration'}{'iType'} = $inputFile;
 
 	# Include common options
 	# Available processors
