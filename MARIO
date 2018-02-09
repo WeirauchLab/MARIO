@@ -94,8 +94,8 @@ if( $options{'i'} ){
 	# Merged/Concatenate multiple FASTQ files into one
 	if( $Config->get_value('F') ){
 		print STDOUT "  > Concatenating FASTQ files\n";
-		my $mergedFastq1 = "$outDir/merged_1.fastq.gz";
-		my $mergedFastq2 = "$outDir/merged_2.fastq.gz";
+		my $mergedFastq1 = "$outDir/$outDir\_1.fastq.gz";
+		my $mergedFastq2 = "$outDir/$outDir\_2.fastq.gz";
 
 		for( my $i = 0; $i < $iNum; $i++ ){
 			print STDOUT "  > $inputs[$i]\n";
@@ -130,6 +130,11 @@ if( $options{'i'} ){
 	$iType  = 'F';
 	@inputs = split( ',', $Config->get_value($iType) );
 	$iNum   = scalar @inputs;
+
+	# Continue if BAM file or quality control on FASTQ file is requested
+	unless( $Config->get_value('c') or $Config->get_value('q') ){
+		exit;
+	}
 }
 
 # Make the @bedFiles array recyclable for all BAM files
