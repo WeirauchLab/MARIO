@@ -5,9 +5,9 @@ use Getopt::Std;
 use Parallel::ForkManager;
 
 my $progName = $0;
-my $version  = '3.6.1';
+my $version  = '3.6.2';
 my $created  = '011017';
-my $modified = '101117';
+my $modified = '020918';
 
 my %options;
 # EHKLNPQRSTUVWYZ
@@ -94,8 +94,11 @@ if( $options{'i'} ){
 	# Merged/Concatenate multiple FASTQ files into one
 	if( $Config->get_value('F') ){
 		print STDOUT "  > Concatenating FASTQ files\n";
-		my $mergedFastq1 = "$outDir/$outDir\_1.fastq.gz";
-		my $mergedFastq2 = "$outDir/$outDir\_2.fastq.gz";
+		my $outBase      = $outDir;
+		$outBase         =~ s/^.*\///;
+		$outBase         =~ s/\/+$//;
+		my $mergedFastq1 = "$outDir/$outBase\_1.fastq.gz";
+		my $mergedFastq2 = "$outDir/$outBase\_2.fastq.gz";
 
 		for( my $i = 0; $i < $iNum; $i++ ){
 			print STDOUT "  > $inputs[$i]\n";
