@@ -2365,7 +2365,7 @@ sub remove_duplicates
 	my $out = `$samtools view -H $bamFile | grep -oP "SO:\\w+"`;
 	if( ! $out or $out =~ /unsorted/ ){
 		print STDOUT "    Sorting BAM file\n";
-		`$samtools sort $bamFile -\@$proc -o$bamFile.sorted.bam -T$base 2> /dev/null`;
+		`$samtools sort $bamFile -\@$proc -o$bamFile.sorted.bam -T$outDir/$base 2> /dev/null`;
 		`mv -f $bamFile.sorted.bam $bamFile 2> /dev/null`;
 	}
 	my $time0   = time;
