@@ -1839,7 +1839,7 @@ sub quality_control
 		my $qcLog = "$outDir/$base\_fastqc.log";
 
 		print STDOUT "    > $fastq\n";
-		`$fastqc --extract -o $qcDir -f fastq $fastq 2> /dev/null`;
+		`$fastqc --extract -o $qcDir -f fastq $fastq 2> /dev/stdout | sed 's|^|        |' > /dev/stderr`;
 		my $num = `ls $qcDir/$base*_fastqc/summary.txt | wc -l 2> /dev/null`;
 
 		if( !$num ){
