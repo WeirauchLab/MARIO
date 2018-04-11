@@ -394,6 +394,10 @@ sub process_fastq_file
 	);
 	$Alignment->align_to_genome;
 
+	# Sort BAM file
+	$Alignment->sort_bam;
+	$Config->set_value( 'SORTED', 1 );
+
 	# Remove duplicate reads
 	if( !$Config->get_value('r') ){
 		$Alignment->remove_duplicates;
@@ -423,6 +427,9 @@ sub process_bam_file
 		file   => $input,
 		config => $Config,
 	);
+
+	# Sort BAM file
+	$Alignment->sort_bam;
 
 	# Remove duplicate reads
 	unless( $Config->get_value('r') or $Config->get_value('DP') ){
@@ -1847,7 +1854,7 @@ sub quality_control
 			return 0;
 		}
 		# Output report to STDOUT
-		my $qcOut = `cut -f1,2 $qcDir/$base*_fastqc/summary.txt 2> /dev/null | sed 's|^|      |'`;
+		my $qcOut = `cut -f1,2 $qcDir/$base*_fastqc/summary.txt 2> /dev/null | sed 's|^|      |' | tail -n12`;
 		print STDOUT "$qcOut"; # Report already contains new lines
 
 		# Save to log file
@@ -2283,13 +2290,13 @@ sub _count_aligned_reads
 sub sort_bam
 {
 	my $self     = shift;
-	my $dupsFlag = shift;
 	my $bamFile  = $self->{'file'};
 	my $Config   = $self->{'config'};
 	my $samtools = $Config->get_value( 'SAMTOOLS' );
+	my $sorted   = $Config->get_value( 'SORTED' );
 
 	# Skip this step if already performed
-	return 1 if $dupsFlag;
+	return 1 if $sorted;
 
 	print STDOUT "  Sorting BAM file ...\n";
 
@@ -2301,15 +2308,11 @@ sub sort_bam
 	}
 	my $time0   = time;
 
+	# Sort BAM file using samtools
 	`$samtools sort $bamFile $bamFile.sort > /dev/null 2>&1`;
 	print STDOUT "    Failed to sort BAM file!\n" unless -s "$bamFile.sort.bam";
 
 	`mv $bamFile.sort.bam $bamFile`;
-
-	if( !$self->{'aligned'} ){
-		my $numAligned     = _count_aligned_reads( $bamFile, $Config );
-		$self->{'aligned'} = $numAligned;
-	}
 
 	my $time1   = time;
 	my $elapsed = sprintf( "%.2f", ( $time1 - $time0 ) / 60 );
@@ -2360,15 +2363,7 @@ sub remove_duplicates
 	}
 
 	print STDOUT "  Removing duplicate reads ...\n";
-
-	# Check if BAM file is sorted
-	my $out = `$samtools view -H $bamFile | grep -oP "SO:\\w+"`;
-	if( ! $out or $out =~ /unsorted/ ){
-		print STDOUT "    Sorting BAM file\n";
-		`$samtools sort $bamFile -\@$proc -o$bamFile.sorted.bam -T$outDir/$base 2> /dev/null`;
-		`mv -f $bamFile.sorted.bam $bamFile 2> /dev/null`;
-	}
-	my $time0   = time;
+	my $time0 = time;
 
 	# Remove duplicate reads by chromosome, position and sequence
 	my(
