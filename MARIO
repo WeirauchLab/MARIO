@@ -638,6 +638,7 @@ sub print_usage
       -a  Align FASTQ files to genome
       -d  Find ADBs (generates DAT files -raw ADBs-)
       -o  Combine DAT files. Add Allelic Reproducibility Scores (ARS) and reference bases
+      -n  Annotate DAT files
 
       -c  Call peaks from BAM file
       -q  Perform quality control of raw-reads (for each FASTQ file)
@@ -717,7 +718,7 @@ The pipeline can be used to start and/or generate any intermediate file in the s
 \e[1;32m|     |               ^               |     |\e[0m
 \e[1;32m|     |               | (c)           |     |\e[0m
 \e[1;32m|     v               |               v     |\e[0m
-\e[1;32m| +-----[F]       +-----[A]       +-----[D] |       +=======+       +-----[C]\e[0m
+\e[1;32m| +-----[F]       +-----[A]       +-----[D] |       +=======+       +-------+\e[0m
 \e[1;32m| | FASTQ | ----> |  BAM  | ----> |  DAT  | | ----> |  ADB  | <---- | ANNOT |\e[0m
 \e[1;32m| +-------+  (a)  +-------+  (d)  +-------+ |  (o)  +=======+  (n)  +-------+\e[0m
 \e[1;32m|    (q)              ^                     |           |\e[0m
@@ -756,6 +757,7 @@ Priority of input files:
 -a  Align FASTQ reads to the genome (generates BAM file)
 -d  Find positions with Allele-Dependent Behavior (ADB). Generates DAT files
 -o  Combine DAT files. Add Allelic Reproducibility Scores (ARS) and reference bases
+-n  Annotate DAT files
 
 -B  (optional) Peaks file in BED format
 -O  Name of output folder (all files are saved here)
@@ -784,7 +786,9 @@ Output files:
 (HIT) If motif files are given, the ADB file is further annotated with motif
        hits on each heterozygous position
 
-NOTE: ADB and HIT Results are annotated using any available \"ANNO_#\" file specified in the configuration file
+NOTES:
+      ADB and HIT Results are annotated using any available \"ANNO_#\" file
+        specified in the configuration file.
 
 
 $examples
