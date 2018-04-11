@@ -801,6 +801,7 @@ $examples
 sub print_configuration_file
 {
 	my $version = shift;
+	$version    =~ s/\.\d+$//;
 
 	my $text =
 "#-------------------------------------------------------------------------------
