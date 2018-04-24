@@ -1966,11 +1966,40 @@ sub generate
 	my $time0   = time;
 
 	# Download SRA file via FTP
-	print STDOUT "    Downloading SRA file\n";
-	my( $sra6 ) = $sra =~ /(SRR\d{3})/;
-	my $ftpSite = "ftp://ftp-trace.ncbi.nih.gov/sra/sra-instant/reads/ByRun/sra/SRR/$sra6/$sra";
-	`wget -cq -O $outDir/$sra.sra $ftpSite/$sra.sra`;
+	my $valid;
+	my $trial;
+	my $limit = 5;
+
 	my $sraFile = "$outDir/$sra.sra";
+	do{
+		$trial++;
+		print STDOUT "    Downloading SRA file (trial $trial)\n";
+		my( $sra6 ) = $sra =~ /(SRR\d{3})/;
+		my $ftpSite = "ftp://ftp-trace.ncbi.nih.gov/sra/sra-instant/reads/ByRun/sra/SRR/$sra6/$sra";
+		`wget -cq -O $outDir/$sra.sra $ftpSite/$sra.sra`;
+
+		# Check if SRA file was successfully downloaded
+		my $checksum = `vdb-validate $sraFile 2>/dev/stdout | grep -oP "is consistent"`;
+		chomp $checksum;
+
+		if( $checksum eq 'is consistent' ){
+			$valid = 1;
+		}
+		else{
+			sleep 5;
+		}
+	}
+	until( $valid or $trial == $limit );
+
+	# Continue if SRA file is valid
+	if( $valid ){
+		print STDOUT "      MD5 checksum OK\n";
+	}
+	else{
+		# Clean and throw error message
+		`rm -f $sraFile`;
+		die "ERROR: Failed downloading SRA file after $trial trials\n";
+	}
 
 	# Define FASTQ file names
 	print STDOUT "    Trying with --split-files option\n";
