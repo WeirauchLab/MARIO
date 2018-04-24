@@ -5,7 +5,7 @@ use Getopt::Std;
 use Parallel::ForkManager;
 
 my $progName = $0;
-my $version  = '3.6.2';
+my $version  = '3.6.3';
 my $created  = '011017';
 my $modified = '020918';
 
