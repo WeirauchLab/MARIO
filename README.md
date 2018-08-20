@@ -186,10 +186,10 @@ Priority of input files:
 -c  Call peaks
 -b  Do not require het-SNPs to fall within peaks
 -i  Integrate or concatenate multiple FASTQ files (input with -I of -F options)
-      Sometimes a single FASTQ file is split into multiple ones in GEO for a
-     single experiment
+    Sometimes a single FASTQ file is split into multiple ones in GEO for a
+    single experiment
 -n  Annotate ADB results
-      It will use the GENANNO_FILE and/or DISANNO_FILE specified in config file
+    It will use the GENANNO_FILE and/or DISANNO_FILE specified in config file
 -p  Number of threads (default: use all available threads)
 -q  Perform quality control on FASTQ files
 -r  Keep duplicate reads
@@ -204,12 +204,13 @@ Priority of input files:
 (BED) If the -c option is given, MACS2 called peaks are produced as a BED file.
       The BED file has 4 additional columns (6 through 9):
         6.  Number of reads under the peak
-        7.  RPKM, measured as the number of reads divided by the peak width,
+        7.  Peak width
+        8.  RPKM, measured as the number of reads divided by the peak width,
              multiplied by 1,000,000 divided by the total number of reads under
              all peaks
-        8.  TIER1 flag. If 1, the peak passed the minimum peak RPKM  requirement
-        9.  TIER2 flag. If 1, the peak passed the minimum peak width requirement
-        10. TIER3 flag. If 1, the peak passed the minimum peak reads requirement
+        9.  TIER1 flag. If 1, the peak passed the minimum peak RPKM  requirement
+        10. TIER2 flag. If 1, the peak passed the minimum peak width requirement
+        11. TIER3 flag. If 1, the peak passed the minimum peak reads requirement
 (ADB) Allele-dependent behavior at each heterozygous positions, including
       reproducibility score (ARS) and annotations.
 (HIT) If motif files are given, the ADB file is further annotated with motif
@@ -217,6 +218,66 @@ Priority of input files:
 ```
 
 ## Change log:
+* f8eda7b (tag: 3.6.3) MD5 checksum check on downloaded SRA file
+* 56d1261 Create config_3.6.txt instead of config_3.6.2.txt
+* 2c6b68e (tag: 3.6.2) Help output now includes description of -n option
+* ea46f70 BugFix. BAM not sorted if dup reads not removed
+* 81f7e51 Improved output to screen for QC analysis
+* 5728e9d Fixed: temp sorted BAM files were not stored in correct directory
+* 3442cd7 BugFix. Path removed in file base name under -i option
+* 3e7721b Changed version inside MARIO
+* 0f099f7 (tag: help, tag: 3.6.1) Bugfix. Bug was introduced with the -i option
+* 69ffe24 Bugfix: failed after concatenating input files
+* aff7f42 (tag: 3.6.0) New -i option added
+* a78801c Bugfix. $shuffled changed to @shuffled
+* 07aac12 Limit number of inputs to 6 if -l is given
+* 00ec2d4 BugFix. Error reading BOWTIE2 and HISAT2 log
+* 31f3eda Bugfix. Problems with samtools sort new version
+* 6e4dd11 Bugfix. New "samtools sort" required -o option
+* 932c076 Minor text corrections to README and within MARIO
+* c84a19a Added TIER3 filter to bed files (on peak reads)
+* c8eaa85 Bugfix. Samtools not loaded for peak-calling
+* c60d6ad Fixed QC routine silently duplicated
+* 7fe81f7 (tag: 3.5.0) It now downloads SRA files using wget
+* 5527e37 (tag: 3.4.1) Changes to README.md
+* 5bd3a43 Bug fix. Failure after removing duplicate reads
+* 77de2fe Trim adapters on WARN or FAIL adapter content
+* d2fb877 (tag: 3.4.0) Added functionality: Trimming of adapter sequences
+* c521a08 Updated README.md
+
+### MARIO version 3.8.0
+
+* Peak BED files now report entire MACS2 output (for compatibility with IDR
+  calculations) plus RPKMs and number of reads under peaks
+* Expanded trimming capabilities: Trims adapter sequences if QC on reads fails
+  on "Per base sequence quality" and "Per sequence quality scores"
+* Bugfix. Trimming failed when having paired-end reads due to file naming issues
+* Bugfix. BAM sorting failed due changing option in samtools
+ (can only use samtools version 1.3 or higher now)
+* Updated README.md
+* Create CONFIG.txt instead of config_3.6.txt
+* Better organization of the CONFIG.txt file
+
+### MARIO version 3.7.0
+
+* Added MD5 checksum check on downloaded SRA file
+* Create config_3.6.txt instead of config_3.6.2.txt
+
+### MARIO version 3.6.2
+
+* Help output now includes description of -n option
+* BugFix. BAM not sorted if dup reads not removed
+* Improved output to screen for QC analysis
+* Bugfix: temp sorted BAM files were not stored in correct directory
+* BugFix. Path removed in file base name under -i option
+
+### MARIO version 3.6.1
+
+* Bugfix. Bug was introduced with the -i option
+
+### MARIO version 3.6.0
+
+* Added -i option to integrate or concatenate multiple FASTQ files into one
 
 ### MARIO version 3.5.0
 
