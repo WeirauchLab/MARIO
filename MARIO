@@ -5,7 +5,7 @@ use Getopt::Std;
 use Parallel::ForkManager;
 
 my $progName = $0;
-my $version  = '3.8.0';
+my $version  = '3.8.1';
 my $created  = '011017';
 my $modified = '081018';
 
@@ -141,11 +141,11 @@ if( $options{'i'} ){
 }
 
 # Make the @bedFiles array recyclable for all BAM files
-my $BedFiles = new BED_FILES();
+my $BedFiles = new BED_FILES( config => $Config );
 $BedFiles->load_bed_files( $Config->get_value('B'), $iNum )
 	if $Config->get_value('B');
 
-my $DatFiles = new DAT_FILES();
+my $DatFiles = new DAT_FILES( config => $Config );
 
 for( my $i = 1; $i <= $iNum; $i++ ){
 	my $input  = $inputs[$i-1];
@@ -895,8 +895,10 @@ PEAK_EXT    = 50    # Number of base pairs to extend called peaks on both sides
 
 ## Peak calling options for MACS2
 ## Enter as many modes as you'd like, with the corresponding MACS2 options
+## These lines should start with the word \"MODE\". After that you can choose a number or something else
 
-# HUMAN
+# These modes are for HUMANs only as they have the option \"-g hs\"
+# See the MACS2 documentation on how to specify other organisms
 MODE1 = -g hs -q 0.01                                  # Narrow peak calls
 MODE2 = -g hs -q 0.01 --broad                          # Broad peak calls
 MODE3 = -g hs -q 0.01 --broad --nomodel --extsize 1000 # Broad peak (with no model) calls with peak size of 1000bp
@@ -1158,9 +1160,14 @@ use strict;
 
 sub new
 {
-	my $class = shift;
+	my $class     = shift;
+	my %arguments = @_;
+    my $Config    = $arguments{'config'} or
+		die "ERROR: Please provide an argument for 'config'\n";
+
 	my $self  = {
-		bed_files => undef, # {MODE} = [files]
+		bed_files => undef, # {MODE#} = [files]
+		config    => $Config,
 	};
 	bless( $self, $class );
 
@@ -1202,27 +1209,29 @@ sub add_files
 
 sub load_bed_files
 {
-	my $self  = shift;
-	my $bLine = shift;
-	my $iNum  = shift;
+	my $self   = shift;
+	my $bLine  = shift;
+	my $iNum   = shift;
+	my $Config = $self->{'config'};
+	my $modes  = $Config->get_value('MODES');
+	my @modes  = sort{ $a cmp $b } keys %$modes;
 	my %bedFiles;
 
 	for my $bGroup ( split( ',', $bLine ) ){
-		my $i;
-
-		for my $bFile ( split( ':', $bGroup ) ){
-			$i++;
-			push( @{$bedFiles{"MODE$i"}}, $bFile );
+		for my $mode ( @modes ){
+			for my $bFile ( split( ':', $bGroup ) ){
+				push( @{$bedFiles{$mode}}, $bFile );
+			}
 		}
 	}
-	my $bNum = scalar @{$bedFiles{'MODE1'}};
+	my $bNum = scalar @{$bedFiles{$modes[0]}};
 
 	if( $bNum < $iNum ){
 		do{
 			for my $mode ( keys %bedFiles ){
 				push( @{$bedFiles{$mode}}, @{$bedFiles{$mode}} );
 			}
-			$bNum = scalar @{$bedFiles{'MODE1'}};
+			$bNum = scalar @{$bedFiles{$modes[0]}};
 		}
 		until( $bNum >= $iNum );
 	}
@@ -1241,8 +1250,13 @@ use strict;
 sub new
 {
 	my $class = shift;
+	my %arguments = @_;
+    my $Config    = $arguments{'config'} or
+		die "ERROR: Please provide an argument for 'config'\n";
+
 	my $self  = {
 		dat_files => undef, # {MODE} = [files]
+		config    => $Config,
 	};
 	bless( $self, $class );
 
@@ -1284,19 +1298,21 @@ sub add_files
 
 sub load_dat_files
 {
-	my $self  = shift;
-	my $dLine = shift;
-	my $exist = $self->{'dat_files'} || 0;
+	my $self   = shift;
+	my $dLine  = shift;
+	my $Config = $self->{'config'};
+	my $modes  = $Config->get_value('MODES');
+	my @modes  = sort{ $a cmp $b } keys %$modes;
+	my $exist  = $self->{'dat_files'} || 0;
 
 	if( ! $exist ){
 		my %datFiles;
 
 		for my $dGroup ( split( ',', $dLine ) ){
-			my $i;
-
-			for my $dFile ( split( ':', $dGroup ) ){
-				$i++;
-				push( @{$datFiles{"MODE$i"}}, $dFile );
+			for my $mode ( @modes ){
+				for my $dFile ( split( ':', $dGroup ) ){
+					push( @{$datFiles{$mode}}, $dFile );
+				}
 			}
 		}
 		$self->{'dat_files'} = \%datFiles;
@@ -1611,8 +1627,17 @@ sub _configure
 			my $value = $options->{$conf};
 
 			if( defined $value ){
-				unless( $conf =~ /ANNO_FILES|[abcdfnqrst]/ ){
+				unless( $conf =~ /MODES|ANNO_FILES|[abcdfnqrst]/ ){
 					printf STDOUT ( "%14s: %s\n", $conf, $value );
+				}
+
+				if( $conf =~ /MODES/ ){
+					my @sorted = sort{ $a cmp $b } keys %$value;
+
+					for my $mode ( @sorted ){
+						my $subval = $value->{$mode};
+						printf STDOUT ( "%14s: %s\n", "MACS2_$mode", $subval );
+					}
 				}
 
 				if( $conf =~ /CHROMOSOMES/ ){
@@ -1759,7 +1784,7 @@ sub _require_c_group_options
 	# Save modes into hash
 	my %modes;
 	while( my( $key, $value ) = each %$options ){
-		next unless $key =~ /^MODE\d/;
+		next unless $key =~ /^MODE/;
 		$modes{$key} = $value;
 	}
 
@@ -3055,6 +3080,7 @@ sub count_reads_under_peak
 					$p_qvalue,
 					$p_summit,
 				) = split( "\t", $peak_line );
+				$p_summit      = $p_summit || 'NA';
 				my $read_count = 0;
 				my $state      = 0;
 
@@ -3093,6 +3119,7 @@ sub count_reads_under_peak
 									$p_qvalue,
 									$p_summit,
 								);
+								$p_summit = $p_summit || 'NA';
 
 								# CHR PEAK_START PEAK_END PEAK_ID PEAK_SUMMIT READ_COUNT
 								if( $read_count ){
@@ -3156,11 +3183,11 @@ sub count_reads_under_peak
 	}
 
 	# Concatenate and sort BED files
-	`cat $outDir/chr*_$peakBase.bed | cut -f1-11 | sort -Vk1,1 -k2,2g > $peakFile`;
+	`cut -f1-11 $outDir/chr*_$peakBase.bed | sort -Vk1,1 -k2,2g > $peakFile`;
 
 	# Remove spurious peaks (>= 300 bp in width AND >= 200 RPKM)
 	my $totalCount = `cut -f11 $peakFile | paste -sd+ | bc`; chomp $totalCount;
-#	$minWidth     += 2 * $extend;
+
 	open( IN, $peakFile ) or
 		die "ERROR: Could not open file $peakFile\n";
 	my $tmpFile = "$peakFile.tmp";
@@ -3176,21 +3203,10 @@ sub count_reads_under_peak
 		my $width = ( $end - $start ) / 1000;
 		my $rpkm  = sprintf( "%.4f", ( $reads / $width ) * ( 1000000 / $totalCount ) );
 
-		# Flags for stringent filtering options
-#		my $tier1 = 0; # Flag for RPKM filtering
-#		my $tier2 = 0; # Flag for peak width filtering
-#		my $tier3 = 0; # Flag for peak reads filtering
-#		$tier1    = 1 if $rpkm  >= $minRpkm;
-#		$tier2    = 1 if $width >= $minWidth;
-#		$tier3    = 1 if $reads >= $minReads;
-
 		my @output = (
 			$line,
-			$width,
+			$width * 1000,
 			$rpkm,
-#			$tier1,
-#			$tier2,
-#			$tier3,
 		);
 		print OUT join( "\t", @output ), "\n";
 	}
@@ -3433,7 +3449,7 @@ sub new
 {
 	my $class     = shift;
 	my %arguments = @_;
-    my $adbFiles   = $arguments{'file'};
+    my $adbFiles  = $arguments{'file'};
     my $Config    = $arguments{'config'} or
 		die "ERROR: Please provide an argument for 'config'\n";
 	my $outDir    = $Config->get_value('O');
