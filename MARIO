@@ -2172,6 +2172,15 @@ sub trim_adapters
                 # If FASTQ was the input, we keep processing the trimmed file without touching the original
                 my $file1 = `ls $outDir\/$base1a*_val_1.fq*`; chomp $file1;
                 my $file2 = `ls $outDir\/$base2a*_val_2.fq*`; chomp $file2;
+
+				# Rename the "val_#" files to "trimmed"
+				my $nFile1 = $file1;
+				my $nFile2 = $file2;
+				$nFile1    =~ s/val_1/trimmed/;
+				$nFile2    =~ s/val_2/trimmed/;
+				`mv -f $file1 $nFile1`;
+				`mv -f $file2 $nFile2`;
+
                 $self->set_file1( $file1 );
                 $self->set_file2( $file2 );
             }
