@@ -2024,7 +2024,7 @@ sub get_base2
 	return 0 unless $base;
 
 	$base =~ s/^.*\///;
-	$base =~ s/(.*)_read[2]/$1/;
+#	$base =~ s/(.*)_read[2]/$1/;
 	$base =~ s/(.*).f(ast)*q(.gz)*/$1/;
 #	$base =~ s/(.*)_[2]/$1/;
 
