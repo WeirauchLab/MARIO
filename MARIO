@@ -5,9 +5,9 @@ use Getopt::Std;
 use Parallel::ForkManager;
 
 my $progName = $0;
-my $version  = '3.8.1';
+my $version  = '3.8.2';
 my $created  = '011017';
-my $modified = '081018';
+my $modified = '090618';
 
 my %options;
 # EHKLNPQRSTUVWYZ
@@ -2164,26 +2164,23 @@ sub trim_adapters
             `mv -f $outDir/$base1a*_trimming_report.txt $outDir/$base1a\_trim.log`;
 
             if( $Config->get_value('I') ){
-                # If FASTQ is an intermediate file, we replace the orignal with the trimmed one
-                `mv -f $outDir\/$base1a*_val_1.fq* $fastq1`;
-                `mv -f $outDir\/$base2a*_val_2.fq* $fastq2`;
+                # If FASTQ is an intermediate file, we can remove the orignal and leave the trimmed one
+                `rm -f $fastq1 $fastq2`;
             }
-            else{
-                # If FASTQ was the input, we keep processing the trimmed file without touching the original
-                my $file1 = `ls $outDir\/$base1a*_val_1.fq*`; chomp $file1;
-                my $file2 = `ls $outDir\/$base2a*_val_2.fq*`; chomp $file2;
+			# Process the name of the trimmed file
+			my $file1 = `ls $outDir\/$base1a*_val_1.fq*`; chomp $file1;
+			my $file2 = `ls $outDir\/$base2a*_val_2.fq*`; chomp $file2;
 
-				# Rename the "val_#" files to "trimmed"
-				my $nFile1 = $file1;
-				my $nFile2 = $file2;
-				$nFile1    =~ s/val_1/trimmed/;
-				$nFile2    =~ s/val_2/trimmed/;
-				`mv -f $file1 $nFile1`;
-				`mv -f $file2 $nFile2`;
+			# Rename the "val_#" files to "trimmed"
+			my $nFile1 = $file1;
+			my $nFile2 = $file2;
+			$nFile1    =~ s/val_1/trimmed/;
+			$nFile2    =~ s/val_2/trimmed/;
+			`mv -f $file1 $nFile1`;
+			`mv -f $file2 $nFile2`;
 
-                $self->set_file1( $file1 );
-                $self->set_file2( $file2 );
-            }
+			$self->set_file1( $nFile1 );
+			$self->set_file2( $nFile2 );
         }
         # Treat single-end reads
         else{
@@ -2195,8 +2192,8 @@ sub trim_adapters
             `mv -f $outDir/$base*\_trimming_report.txt $outDir/$base\_trim.log`;
 
             if( $Config->get_value('I') ){
-                # If FASTQ is an intermediate file, we replace the orignal with the trimmed one
-                `mv -f $base1*_trimmed.fq* $fastq1`;
+                # If FASTQ is an intermediate file, we can remove the orignal and leave the trimmed one
+                `rm -f $fastq1`;
             }
             else{
                 # If FASTQ was the input, we keep processing the trimmed file without touching the original
