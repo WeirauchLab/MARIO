@@ -305,6 +305,9 @@ if( $Config->get_value('D') ){
 	print STDOUT "\e[0;32m[ DONE ]\e[0m\n";
 }
 
+# Remove $outDir/tmp directory
+`rm -rf $outDir/tmp`;
+
 exit;
 
 
