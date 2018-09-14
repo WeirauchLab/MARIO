@@ -36,8 +36,11 @@ if( $options{'x'} or $options{'y'} or $options{'z'} ){
 }
 # Create output directory (if specified)
 my $outDir = $options{'O'} || '.';
-`mkdir -p $outDir`
+`mkdir -p $outDir/tmp`
 	if $outDir;
+
+# Set TMPDIR environment variable to $outDir/tmp
+$ENV{TMPDIR} = "$outDir/tmp";
 
 # Add version to options
 $options{'VERSION'} = $version;
