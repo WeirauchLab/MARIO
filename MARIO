@@ -3,6 +3,7 @@ use strict;
 use Cwd;
 use Getopt::Std;
 use Parallel::ForkManager;
+use Data::Dumper;
 
 my $progName = $0;
 my $version  = '3.8.2';
@@ -146,6 +147,8 @@ $BedFiles->load_bed_files( $Config->get_value('B'), $iNum )
 	if $Config->get_value('B');
 
 my $DatFiles = new DAT_FILES( config => $Config );
+$DatFiles->load_dat_files( $Config->get_value('D') )
+	if $Config->get_value('D');
 
 for( my $i = 1; $i <= $iNum; $i++ ){
 	my $input  = $inputs[$i-1];
@@ -220,7 +223,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 		}
 		else{
 			# Remove per chromosome BAM files (no longer used)
-			`rm -f $outDir/chr*.bam $outDir/*.bai 2> /dev/null`;
+			`rm -f $outDir/chr*.bam 2> /dev/null`;
 
 			# Save BAM file (no longer in use)
 			if( !$Config->get_value('SAVE_BAM') ){
@@ -229,7 +232,7 @@ for( my $i = 1; $i <= $iNum; $i++ ){
 			}
 		}
 		# Remove per chromosome BED files (no longer used)
-		`rm -f $outDir/chr*.bed 2> /dev/null`;
+		`rm -f $outDir/chr*.bed $outDir/*.bai 2> /dev/null`;
 
 		print STDOUT "\e[0;32m[ DONE ]\e[0m\n";
 	}
@@ -242,7 +245,6 @@ exit unless $Config->get_value('o');
 # Annotate DAT files
 #-------------------------------------------------------------------------------
 if( $Config->get_value('D') ){
-	$DatFiles->load_dat_files( $Config->get_value('D') );
 	my $datFiles = $DatFiles->get_files;
 
 	# Second phase: obtain final results from all experiments
@@ -1302,7 +1304,14 @@ sub load_dat_files
 	my $dLine  = shift;
 	my $Config = $self->{'config'};
 	my $modes  = $Config->get_value('MODES');
-	my @modes  = sort{ $a cmp $b } keys %$modes;
+	my @modes;
+
+	if( $modes ){
+		@modes = sort{ $a cmp $b } keys %$modes;
+	}
+	else{
+		push( @modes, 'MODE' );
+	}
 	my $exist  = $self->{'dat_files'} || 0;
 
 	if( ! $exist ){
@@ -1676,8 +1685,9 @@ sub _load_configuration_file
 
 		my $conf  = $line;
 		my $value = $line;
-		$conf     =~ s/\s*=.*$//;
-		$value    =~ s/^.*=\s*//;
+		$conf     =~ s/\s*=.*?(.*)$//;
+		$value    = $1;
+		$value    =~ s/^\s*//;
 		$value    =~ s/\s*#.*$//;
 
 		if( $conf and defined $value ){
@@ -4762,8 +4772,8 @@ sub	add_reference_bases
 
 	if( $num > 0 && -s $refFile ){
 		print STDOUT "    Number of processed lines = $num\n";
-		`head -n1 $refFile | sed 's|START|START\tEND|' > $procFile`;
-		`tail -n +2 $refFile | awk '{print \$1,\$2-1,\$0}' OFS='\t' | cut -f1,2,4- | sort -Vk1,1 -k2,2n >> $procFile`;
+		`head -n1 $refFile > $procFile`;
+		`tail -n +2 $refFile | awk '{print \$1,\$2-1,\$0}' OFS='\t' | cut -f1,2,5- | sort -Vk1,1 -k2,2n >> $procFile`;
 		`rm -f $refFile $bedFile`;
 	}
 	else{
