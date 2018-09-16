@@ -1914,9 +1914,11 @@ sub _require_d_group_options
 	$include->{'d'} = 1;
 
 	_require_program( $options, 'SAMTOOLS' );
+	_require_program( $options, 'BEDTOOLS' );
 
 	$include->{'CHROMOSOMES'} = 1;
 	$include->{'SAMTOOLS'}    = 1;
+	$include->{'BEDTOOLS'}    = 1;
 	$include->{'S_READS_CF'}  = 1;
 	$include->{'W_READS_CF'}  = 1;
 }
@@ -2211,11 +2213,9 @@ sub trim_adapters
                 # If FASTQ is an intermediate file, we can remove the orignal and leave the trimmed one
                 `rm -f $fastq1`;
             }
-            else{
-                # If FASTQ was the input, we keep processing the trimmed file without touching the original
-                my $file = `ls $outDir\/$base*_trimmed.fq*`; chomp $file;
-                $self->set_file1( $file );
-            }
+			# Get the name of the trimmed FASTQ file and store it
+			my $file = `ls $outDir\/$base*_trimmed.fq*`; chomp $file;
+			$self->set_file1( $file );
         }
     }
     my $time1   = time;
@@ -2370,33 +2370,28 @@ sub new
 {
 	my $class     = shift;
 	my %arguments = @_;
-    my $file      = $arguments{'file'};
+    my $bamFile   = $arguments{'file'};
     my $Fastq     = $arguments{'fastq'};
     my $Config    = $arguments{'config'} or
 		die "ERROR: Please provide an argument for 'config'\n";
 	my $outDir    = $Config->get_value('O');
 	my $chroms    = $Config->get_value('CHROMOSOMES');
-	my $fastq1;
-	my $fastq2;
 
 	if( $Fastq ){
-		$fastq1  = $Fastq->get_file1;
-		$fastq2  = $Fastq->get_file2;
-		my $base = $Fastq->get_base1;
-		$file    = "$outDir/$base.bam" unless $file;
+		my $base  = $Fastq->get_base1;
+		$bamFile = "$outDir/$base.bam" unless $bamFile;
 	}
 	die "ERROR: Please provide an argument for 'file' or 'fastq'\n"
-		unless $file;
+		unless $bamFile;
 
 	# Constructor
 	my $self = SUPER::new $class
 	(
-		file   => $file,
+		file   => $bamFile,
 		outDir => $outDir,
 	);
 	$self->{'config'}     = $Config;
-	$self->{'file1'}      = $fastq1 || 0;
-	$self->{'file2'}      = $fastq2 || 0;
+	$self->{'fastq'}      = $Fastq || 0;
 	$self->{'chrFiles'}   = undef;
 	$self->{'readLength'} = undef;
 	bless( $self, $class );
@@ -2454,8 +2449,9 @@ sub _get_chroms_from_fa
 sub align_to_genome
 {
 	my $self     = shift;
-	my $fastq1   = $self->{'file1'};
-	my $fastq2   = $self->{'file2'} || 0;
+	my $Fastq    = $self->{'fastq'};
+	my $fastq1   = $Fastq->get_file1;
+	my $fastq2   = $Fastq->get_file2;
 	my $bamFile  = $self->{'file'};
 	my $base     = $bamFile;
 	$base        =~ s/^.*\///;
