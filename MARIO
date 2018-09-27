@@ -6,9 +6,9 @@ use Parallel::ForkManager;
 use Data::Dumper;
 
 my $progName = $0;
-my $version  = '3.8.2';
+my $version  = '3.9.0';
 my $created  = '011017';
-my $modified = '090618';
+my $modified = '092418';
 
 my %options;
 # EHKLNPQRSTUVWYZ
@@ -290,10 +290,10 @@ if( $Config->get_value('D') ){
 				if $Config->get_value('m');
 
 			if( $Config->get_value('n') ){
-				$Postprocess->annotate( $adbFile, $Config );
+				$Postprocess->annotate( $adbFile, $Config, $outDir );
 
 				my $hitFile = $Postprocess->get_hitFile;
-				$Postprocess->annotate( $hitFile, $Config )
+				$Postprocess->annotate( $hitFile, $Config, $outDir )
 					if -s $hitFile;
 			}
 			print STDOUT "\e[0;32m[ DONE ]\e[0m\n";
@@ -370,7 +370,10 @@ sub process_fastq_file
 	# Quality control on raw reads
 	if( $Config->get_value('q') ){
 		my $qcLogs = $Fastq->quality_control;
-		$Fastq->trim_adapters( $qcLogs );
+
+		if( ! $Config->get_value('COLORSPACE') ){
+			$Fastq->trim_adapters( $qcLogs );
+		}
 
 		# Remove unused fastqc directory
 		my $outDir = $Config->get_value('O');
@@ -2107,6 +2110,14 @@ sub quality_control
 
 		# Save to log file
 		`echo $fastq > $qcLog && cut -f1,2 $qcDir/$base*_fastqc/summary.txt >> $qcLog`;
+
+		# Detect if the FASTQ file is encoded in color space and flag it
+		my $sequence = `zgrep -A1 "^@" $fastq | tail -n +2 | head -n1`; chomp $sequence;
+		if( $sequence =~ /[0123]+/ ){
+			$Config->set_value( 'COLORSPACE', 1 );
+			print STDERR "    FASTQ sequences are encoded in color space\n";
+		}
+
 		push( @qcLogs, $qcLog );
 	}
 	# Move zipped fastqc directory
@@ -2280,7 +2291,8 @@ sub generate
 
 	# Get FASTQ files
 	if( !-s $fastq1 ){
-		`$fastqDump --split-files --gzip $sraFile -O $outDir 2> /dev/null`;
+		# -B option converts color-space to base-space
+		`$fastqDump -B --split-files --gzip $sraFile -O $outDir 2> /dev/null`;
 
 		die "ERROR: Failed to generate FASTQ files\n" unless -s $fastq1;
 		`rm -f $sraFile`;
@@ -4612,7 +4624,6 @@ sub add_ars
 		# 8: g  (i:imputed or g:genotyped)
 		chomp $line;
 		my @split = split( "\t", $line );
-		$num++;
 
 		# Find out if the SNP has concordant s_bases
 		my @bases    = split( ',', $split[3] );
@@ -4637,6 +4648,7 @@ sub add_ars
 			push( @{$wsRatios{$base}}, $ratio );
 		}
 		next unless keys %sSame > 0;
+		$num++;
 
 		# Go through each group found
 		my @arsGroup;
@@ -4712,7 +4724,7 @@ sub add_ars
 	close OUT;
 
 	if( $num > 1 && -s $procTmp ){
-		print STDOUT "    Number of processed lines = $num\n";
+		print STDOUT "    Number of concordant alleles = $num\n";
 		`mv $procTmp $procFile`;
 	}
 	else{
@@ -5265,13 +5277,14 @@ sub annotate
 	my $self     = shift;
 	my $aFile    = shift;
 	my $Config   = shift;
+	my $outDir   = shift;
 	my $bedtools = $Config->get_value('BEDTOOLS');
 	my $chroms   = $Config->get_value('CHROMOSOMES');
-	my $bFiless   = $Config->get_value('ANNO_FILES');
+	my $bFiles   = $Config->get_value('ANNO_FILES');
 
 	print STDOUT "  Annotating $aFile\n";
 
-	for my $bFiles ( @$bFiless ){
+	for my $bFile ( @$bFiles ){
 		# Create "a" BED file by removing the header
 		my $aBed     = $aFile . '.bed';
 		`tail -n +2 $aFile | sort -Vk1,1 -k2,2n > $aBed`;
@@ -5283,12 +5296,12 @@ sub annotate
 		my @annoLines;
 
 		# Create "b" BED file by removing the header
-		my $bBed = $bFiles;
-		$bBed    =~ s/^.*\///;
-		`tail -n +2 $bFiles | sort -Vk1,1 -k2,2n > $bBed`;
+		my $bBed = $bFile;
+		$bBed    =~ s/^.*\//$outDir\//;
+		`tail -n +2 $bFile | sort -Vk1,1 -k2,2n > $bBed`;
 
 		# Get "b" header (excluding the first 3 which are coordinates)
-		my $bHeader  = `cut -f4- $bFiles | head -n1`; chomp $bHeader;
+		my $bHeader  = `cut -f4- $bFile | head -n1`; chomp $bHeader;
 		# Count number of fields in header
 		my @bFields  = split( "\t", $bHeader );
 		my $nbFields = scalar @bFields;
@@ -5317,7 +5330,7 @@ sub annotate
 		`rm -f $aBed.chr* $bBed.chr* $bBed`;
 
 		# Attach annotation to aBed lines
-		my $tmpOut = "tmpAnnoLines.asb";
+		my $tmpOut = "$outDir/tmpAnnoLines.asb";
 		open( OUT, ">$tmpOut" ) or
 			die "ERROR: Could not create file $tmpOut\n";
 
@@ -5345,7 +5358,7 @@ sub annotate
 		close OUT;
 
 		if( -s $tmpOut ){
-			my $bBase = $bFiles;
+			my $bBase = $bFile;
 			$bBase    =~ s/.*\///;
 			print STDOUT "    Annotated using file: $bBase\n";
 
