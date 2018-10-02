@@ -24,16 +24,6 @@ if( $options{'h'} or ! %options ){
 	MESSAGES::print_usage( $progName, $version, $created, $modified );
 	exit;
 }
-
-if( $options{'x'} or $options{'y'} or $options{'z'} ){
-	# Print pipeline scheme
-	MESSAGES::print_scheme( $progName, $version ) if $options{'x'};
-	# Print example config file
-	MESSAGES::print_configuration_file( $version ) if $options{'y'};
-	# Print ARS config' file
-	MESSAGES::print_ars_file() if $options{'z'};
-	exit;
-}
 # Create output directory (if specified)
 my $outDir = $options{'O'} || '.';
 `mkdir -p $outDir/tmp`
@@ -41,6 +31,16 @@ my $outDir = $options{'O'} || '.';
 
 # Set TMPDIR environment variable to $outDir/tmp
 $ENV{TMPDIR} = "$outDir/tmp";
+
+if( $options{'x'} or $options{'y'} or $options{'z'} ){
+	# Print pipeline scheme
+	MESSAGES::print_scheme( $progName, $version ) if $options{'x'};
+	# Print example config file
+	MESSAGES::print_configuration_file( $version ) if $options{'y'};
+	# Print ARS config' file
+	MESSAGES::print_ars_file( "$outDir/ARS_table.txt" ) if $options{'z'};
+	exit;
+}
 
 # Add version to options
 $options{'VERSION'} = $version;
@@ -958,7 +958,9 @@ MOODS      = moods\n";
 
 sub print_ars_file
 {
-	open( OUT, ">ARS_table.txt" ) or
+	my $arsFile = shift;
+
+	open( OUT, ">$arsFile" ) or
 		die "ERROR: Could not write ARS file\n";
 
 	print OUT "EXP	WS_RATIO	A	B
@@ -1726,8 +1728,11 @@ sub _require_file
 			$file = $options->{$conf} . $addon if $addon;
 
 			# Check file is provided
-			die "ERROR: Required file, \"$file\" in option \"$conf\", does not exist\n"
-				if !-s $file;
+			if( ! -e $file ){
+				if( ! -s $file ) {
+					die "ERROR: Required file, \"$file\" in option \"$conf\", does not exist\n";
+				}
+			}
 		}
 	}
 	else{
@@ -1932,9 +1937,10 @@ sub _require_o_group_options
 	my $options = shift;
 	my $include = shift;
 	my $outDir  = $options->{'O'};
+	my $arsFile = "$outDir/ARS_table.txt";
 
-	MESSAGES::print_ars_file() if !-s "$outDir/ARS_table.txt";
-	$options->{'ARS_FILE'} = "$outDir/ARS_table.txt";
+	MESSAGES::print_ars_file( $arsFile ) if ! -s $arsFile;
+	$options->{'ARS_FILE'} = $arsFile;
 
 	_require_file( $options, 'ARS_FILE' );
 	_require_file( $options, 'REFGEN_FILE' );
