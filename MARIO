@@ -1678,7 +1678,8 @@ sub _load_configuration_file
 {
 	my $options = shift;
 	my $version = $options->{'VERSION'};
-	$options->{'C'} = $options->{'C'} || "CONFIG.txt";
+	my $outDir  = $options->{'O'};
+	$options->{'C'} = $options->{'C'} || "$outDir/CONFIG.txt";
 
 	# Require option P
 	_require_file( $options, 'C' );
@@ -1928,11 +1929,12 @@ sub _require_d_group_options
 
 sub _require_o_group_options
 {
-	my $options     = shift;
-	my $include     = shift;
+	my $options = shift;
+	my $include = shift;
+	my $outDir  = $options->{'O'};
 
-	MESSAGES::print_ars_file() if !-s 'ARS_table.txt';
-	$options->{'ARS_FILE'} = 'ARS_table.txt';
+	MESSAGES::print_ars_file() if !-s "$outDir/ARS_table.txt";
+	$options->{'ARS_FILE'} = "$outDir/ARS_table.txt";
 
 	_require_file( $options, 'ARS_FILE' );
 	_require_file( $options, 'REFGEN_FILE' );
@@ -2259,6 +2261,7 @@ sub generate
 		print STDOUT "    Downloading SRA file (trial $trial)\n";
 		my( $sra6 ) = $sra =~ /(SRR\d{3})/;
 		my $ftpSite = "ftp://ftp-trace.ncbi.nih.gov/sra/sra-instant/reads/ByRun/sra/SRR/$sra6/$sra";
+		print "wget -cq -O $outDir/$sra.sra $ftpSite/$sra.sra\n";exit;
 		`wget -cq -O $outDir/$sra.sra $ftpSite/$sra.sra`;
 
 		# Check if SRA file was successfully downloaded
