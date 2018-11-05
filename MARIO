@@ -371,9 +371,7 @@ sub process_fastq_file
 	if( $Config->get_value('q') ){
 		my $qcLogs = $Fastq->quality_control;
 
-		if( ! $Config->get_value('COLORSPACE') ){
-			$Fastq->trim_adapters( $qcLogs );
-		}
+		$Fastq->trim_adapters( $qcLogs );
 
 		# Remove unused fastqc directory
 		my $outDir = $Config->get_value('O');
@@ -1466,6 +1464,11 @@ sub _configure
 		}
 		_require_r_group_options( $options, \%include );
 
+		# If -G is given, assume allelic analysis is required
+		if( $options->{'G'} ){
+			$options->{'d'} = 1;
+		}
+
 		# Check downstream analysis
 		if( $options->{'d'} ){
 			# If -G is given, assume allelic analysis is required
@@ -1532,6 +1535,11 @@ sub _configure
 		if( $options->{'a'} or $options->{'d'} ){
 			_require_a_group_options( $options, \%include );
 			_require_r_group_options( $options, \%include );
+		}
+
+		# If -G is given, assume allelic analysis is required
+		if( $options->{'G'} ){
+			$options->{'d'} = 1;
 		}
 
 		# Check downstream analysis
@@ -1602,9 +1610,14 @@ sub _configure
 			_require_r_group_options( $options, \%include );
 		}
 
+		# If -G is given, assume allelic analysis is required
+		if( $options->{'G'} ){
+			$options->{'d'} = 1;
+		}
+
 		# Check downstream analysis
 		if( $options->{'d'} ){
-			# If -G is given, assume allelic analysis is required
+			# Require -G option
 			_require_G_group_options( $options, \%include );
 
 			# Annotate positions
@@ -2169,6 +2182,7 @@ sub trim_adapters
         }
         close IN;
     }
+	$fail = 1;
     return 1 unless $fail;
 
     # Kmer content QC failed! and alignment was requested
@@ -2267,7 +2281,6 @@ sub generate
 		print STDOUT "    Downloading SRA file (trial $trial)\n";
 		my( $sra6 ) = $sra =~ /(SRR\d{3})/;
 		my $ftpSite = "ftp://ftp-trace.ncbi.nih.gov/sra/sra-instant/reads/ByRun/sra/SRR/$sra6/$sra";
-		print "wget -cq -O $outDir/$sra.sra $ftpSite/$sra.sra\n";exit;
 		`wget -cq -O $outDir/$sra.sra $ftpSite/$sra.sra`;
 
 		# Check if SRA file was successfully downloaded
@@ -2521,7 +2534,9 @@ sub align_to_genome
 		$fastqs      .= " $fastq2" if $pe_flag;
 
 		# Run STAR aligner
-		`$star --runThreadN $proc $modifiers $out_base --genomeDir $index --readFilesIn $fastqs 2> /dev/null`;
+#		`$star --runThreadN $proc $modifiers $out_base --genomeDir $index --readFilesIn $fastqs 2> /dev/null`;
+		print "$star --runThreadN $proc $modifiers $out_base --genomeDir $index --readFilesIn $fastqs\n";
+		`$star --runThreadN $proc $modifiers $out_base --genomeDir $index --readFilesIn $fastqs 2> $outDir/$base\_star_stderr.log`;
 		$totalReads  = `grep "Number of input reads"        $outDir/Log.final.out | cut -f2`; chomp $totalReads;
 		$numAligned  = `grep "Uniquely mapped reads number" $outDir/Log.final.out | cut -f2`; chomp $numAligned;
 
