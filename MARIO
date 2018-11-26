@@ -25,7 +25,8 @@ if( $options{'h'} or ! %options ){
 	exit;
 }
 # Create output directory (if specified)
-my $outDir = $options{'O'} || '.';
+$options{'O'} = $options{'O'} || '.';
+my $outDir = $options{'O'};
 `mkdir -p $outDir/tmp`
 	if $outDir;
 
@@ -138,8 +139,8 @@ if( $options{'i'} ){
 	@inputs = split( ',', $Config->get_value($iType) );
 	$iNum   = scalar @inputs;
 
-	# Continue if BAM file or quality control on FASTQ file is requested
-	unless( $Config->get_value('c') or $Config->get_value('q') ){
+	# Continue if alignment, quality control or ADB calls on FASTQ file is requested
+	unless( $Config->get_value('c') or $Config->get_value('q') or $Config->get_value('d') ){
 		exit;
 	}
 }
@@ -1705,6 +1706,7 @@ sub _load_configuration_file
 
 	while( my $line = <IN> ){
 		chomp $line;
+		next unless $line =~ /=/;
 		next if $line =~ /^\s*$/;
 		next if $line =~ /^\s*#/;
 
@@ -1845,8 +1847,14 @@ sub _require_b_group_options
 
 	_require_file( $options, 'B' );
 
+	# Save modes into hash
+	my %modes = ( MODEb => 1 );
+
 	$include->{'B'}        = 1;
+	$include->{'MODES'}    = 1;
+
 	$options->{'SAVE_BED'} = 1;
+	$options->{'MODES'}    = \%modes;
 }
 
 sub _require_a_group_options
