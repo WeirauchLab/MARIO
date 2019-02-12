@@ -60,7 +60,8 @@ install-modulefile:
 	# -D = create all components of DEST except the last, copy SOURCE to DEST
 	install -D $(MODULEFILE) $(MODULEDESTFILE)
 
-# get VERSION from the environment/command line; use it to update version.h
+# get VERSION from the environment/command line; use it to update the
+# '$version' variable in the 'MARIO' Perl script as well as the modulefile
 release:
 ifeq ($(VERSION),)
 	@echo >&2
