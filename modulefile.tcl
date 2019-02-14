@@ -14,8 +14,16 @@ set issues "https://tfwebdev.research.cchmc.org/gitlab/puj6ug/MARIO_pipeline/iss
 set moduledir  "/data/weirauchlab/local/modules/$name/$version"
 
 # module dependencies
-array set prepreqs {
-    "perl" "5.26.1-wrl"
+array set prereqs {
+    perl        5.28.0
+    fastqc      0.11.2
+    hisat2      2.0.4
+    MACS        2.1.0
+    picard      1.89
+    cutadapt    1.8.1
+    trimgalore  0.4.2
+    bowtie2     2.3.4.1
+    samtools    1.8.0
 }
 
 proc ModulesHelp { } {
