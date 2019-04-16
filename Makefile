@@ -45,11 +45,11 @@ help:
 	@echo
 	@echo "      $(BOLD)make help$(RESET)                   - ($(GREEN)default$(RESET)) you're looking at it ;-)"
 	@echo
-	@echo "      $(BOLD)make install$(RESET)                - install '$(SCRIPTNAME)'"
+	@echo "      $(BOLD)make install$(RESET)                - install '$(SCRIPTNAME)' and modulefile"
 	@echo
 	@echo "      $(BOLD)make install-modulefile$(RESET)     - install Environment Modules modulefile"
 	@echo
-	@echo "      $(BOLD)make release VERSION=$(MAGENTA)x.y.z$(RESET)  - update '$(SCRIPTNAME)' to version $(MAGENTA)x.y.z$(RESET)"
+	@echo "      $(BOLD)make release VERSION=$(MAGENTA)x.y.z$(RESET)  - create release for '$(SCRIPTNAME)' at version $(MAGENTA)x.y.z$(RESET)"
 	@echo
 	@echo
 	@echo "  For more help, see $(READMEURL)"
