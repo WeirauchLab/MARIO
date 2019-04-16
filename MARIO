@@ -6,9 +6,9 @@ use Parallel::ForkManager;
 use Data::Dumper;
 
 my $progName = $0;
-my $version  = '3.9.1';
+my $version  = '3.9.2';
 my $created  = '011017';
-my $modified = '100218';
+my $modified = '041619';
 
 my %options;
 # EHKLNPQRSTUVWYZ
@@ -864,8 +864,8 @@ REFGEN_FILE  = /home/mario/Databases/Hsap/hg19/hg19.fa
 ANNO_1 = /home/mario/Documents/CCHMC_postdoc/Projects/Allele_specific_variants/SDataB_VariantsUsedForEachPhenotype.bed
 ANNO_2 = /home/mario/Databases/Hsap/hg19/hg19_exons_anno.bed
 
-#ANNO_1 = /data/weirauchlab/databank/apps/MARIO/SDataB_VariantsUsedForEachPhenotype.bed # Cluster
-#ANNO_2 = /data/weirauchlab/databank/apps/MARIO/hg19_exons_anno.bed # Cluster
+#ANNO_1 = /data/weirauchlab/databank/appdata/MARIO/SDataB_VariantsUsedForEachPhenotype.bed # Cluster
+#ANNO_2 = /data/weirauchlab/databank/appdata/MARIO/hg19_exons_anno.bed # Cluster
 
 
 ## CHROMOSOMES
@@ -1697,7 +1697,7 @@ sub _load_configuration_file
 	my $outDir  = $options->{'O'};
 	$options->{'C'} = $options->{'C'} || "$outDir/CONFIG.txt";
 
-	# Require option P
+	# Require CONFIG file
 	_require_file( $options, 'C' );
 
 	my $confFile = $options->{'C'};
@@ -2535,7 +2535,7 @@ sub align_to_genome
 	# Use STAR with RNA-seq alignment (memory intensive! >32GB)
 	if( $Config->get_value('s') ){
 		my $star      = $Config->get_value('STAR');
-		my $modifiers = "--outSAMtype BAM Unsorted --quantMode GeneCounts --outSAMmultNmax 1 --outMultimapperOrder Random";
+		my $modifiers = "--outSAMtype BAM Unsorted --outSAMmultNmax 1 --outMultimapperOrder Random";
 		$modifiers   .= " --readFilesCommand zcat" if $gz_flag;
 	 	my $out_base  = "--outFileNamePrefix $outDir/";
 		my $fastqs    = $fastq1;
@@ -4630,7 +4630,7 @@ sub add_ars
 	my $Config   = $self->{'config'};
 	my $procTmp  = "$procFile.tmp";
 
-	print STDOUT "  Adding ARS scores ...\n";
+	print STDOUT "  Adding ARS values ...\n";
 	my $time0    = time;
 
 	# Print header
@@ -4654,6 +4654,9 @@ sub add_ars
 		# 6: 0  (w_reads)
 		# 7: 0  (ws_ratio)
 		# 8: g  (i:imputed or g:genotyped)
+		# 9: Average s_reads
+		#10: Average w_reads
+		#11: Average ws_ratio
 		chomp $line;
 		my @split = split( "\t", $line );
 
@@ -4672,7 +4675,7 @@ sub add_ars
 			my $sReads = $sReads[$i];
 			my $wReads = $wReads[$i];
 			my $ratio  = $wsRatios[$i];
-			next if $wReads <= 0;
+#			next if $wReads <= 0;
 
 			$sSame{$base}++;
 			push( @{$sReads{$base}},   $sReads );
@@ -4684,8 +4687,8 @@ sub add_ars
 
 		# Go through each group found
 		my @arsGroup;
-		my $arsHigh = 1; # >= 0.5
-		my $arsLow  = 1; # <  0.5
+		my $arsHigh = 0; # >= 0.5
+		my $arsLow  = 0; # <  0.5
 		my %arsVote;
 
 		for my $base ( keys %sSame ){
@@ -4749,8 +4752,7 @@ sub add_ars
 		my $arsGroup  = join( ',', @arsGroup );
 		my @addScores = ( $arsGroup, $arsGlob );
 
-		@split = ( @split, $arsGroup, $arsGlob );
-		print OUT join( "\t", @split ), "\n";
+		print OUT join( "\t", ( @split, @addScores )), "\n";
 	}
 	$self->Close;
 	close OUT;
@@ -4760,7 +4762,7 @@ sub add_ars
 		`mv $procTmp $procFile`;
 	}
 	else{
-		print STDOUT "    Failed to add AR scores!\n";
+		print STDOUT "    Failed to add ARS values!\n";
 		return 0;
 	}
 
