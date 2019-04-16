@@ -18,6 +18,10 @@ EXECUTABLES=$(SCRIPTNAME) moods
 MODULEDESTFILE=$(MODULEROOT)/modulefiles/$(MODNAME)/$(PKGVER)
 # the name of the Environment Modules modulefile in the c.w.d.
 MODULEFILE=modulefile.tcl
+# today's date in MMDDYY format
+TODAY=$(shell date +%m%d%y)
+# use the Bash shell (always)
+SHELL=bash
 
 # ANSI terminal colors (see 'man tput') and
 # https://linuxtidbits.wordpress.com/2008/08/11/output-color-on-bash-scripts/
@@ -62,7 +66,7 @@ install-modulefile:
 
 # get VERSION from the environment/command line; use it to update the
 # '$version' variable in the 'MARIO' Perl script as well as the modulefile
-release:
+release: $(EXECUTABLES) $(MODULEFILE)
 ifeq ($(VERSION),)
 	@echo >&2
 	@echo "  $(UL)$(BOLD)$(RED)OH NOES!$(RESET)"
@@ -73,10 +77,28 @@ ifeq ($(VERSION),)
 	@echo >&2
 	@false
 else
-	# replacing version string in the Perl script
+	@if ! [[ $(VERSION) =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$$ ]]; then \
+		echo "(!!) $(BOLD)$(RED)ERROR$(RESET) - bad version; expected x.y[.z], where x, y, and z are all integers." >&2; \
+		exit 1; \
+	fi
+	@if git status --porcelain | grep .; then \
+		echo "(!!) $(BOLD)$(RED)ERROR$(RESET) - Git working tree is dirty; commit changes and try again." >&2; \
+		exit 1; \
+	fi
+	@if git tag | grep $(VERSION); then \
+		echo "(!!) $(BOLD)$(RED)ERROR$(RESET) - release $(VERSION) already exists." >&2; \
+		exit 1; \
+	fi
+	# replace version string in the Perl script
 	sed -i "s/^\(my \$$version  *=  *\)'\(.*\)';/\1'$(VERSION)';/" $(SCRIPTNAME)
+	# update the modified date in the Perl script
+	sed -i "s/^\(my \$$modified  *=  *\)'\(.*\)';/\1'$(TODAY)';/" $(SCRIPTNAME)
 	# replace version in the modulefile, too
 	sed -i 's/\(set version \)".*"/\1"$(VERSION)"/' $(MODULEFILE)
+	# create a new commit log entry and tag for the release
+	git add $^ && git commit -m'Release v$(VERSION)'
+	@#           ^^ means "the names of all the prerequisites"
+	git tag v$(VERSION)
 	@echo
 	@echo "  $(UL)$(BOLD)$(BLUE)SUPER!$(RESET)"
 	@echo
@@ -87,5 +109,11 @@ else
 	@echo "      $(BOLD)make install$(RESET)"
 	@echo
 	@echo "  to update the installed code and Environment Modules modulefile."
+	@echo
+	@echo "  Then push the new tag to your default Git remote, like this:"
+	@echo
+	@echo "      $(BOLD)git push && git push --tags$(RESET)"
+	@echo
+	@echo "  so the new release shows up on GitLab/GitHub."
 	@echo
 endif
