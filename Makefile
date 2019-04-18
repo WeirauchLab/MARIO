@@ -8,7 +8,9 @@ READMEURL=https://tfwebdev.research.cchmc.org/gitlab/puj6ug/MARIO_pipeline\#read
 
 LABROOT=/data/weirauchlab
 # where "local" modules are installed (modules for software *we* wrote)
-MODULEROOT=$(LABROOT)/local/modules
+# the '?=' means take $MODULEROOT from the environment, if defined
+# on OSC, this is '/fs/project/PCCH0011/local/modules' or use $LOCALMODULES
+MODULEROOT?=$(LABROOT)/local/modules
 # "root" dir where MARIO binaries & other supporting files will be installed
 MODULEDIR=$(MODULEROOT)/$(MODNAME)/$(PKGVER)
 # install these into $(MODULEDIR)/bin
@@ -96,9 +98,9 @@ else
 	# replace version in the modulefile, too
 	sed -i 's/\(set version \)".*"/\1"$(VERSION)"/' $(MODULEFILE)
 	# create a new commit log entry and tag for the release
-	git add $^ && git commit -m'Release v$(VERSION)'
+	git add $^ && git commit -m'Release $(VERSION)'
 	@#           ^^ means "the names of all the prerequisites"
-	git tag v$(VERSION)
+	git tag $(VERSION)
 	@echo
 	@echo "  $(UL)$(BOLD)$(BLUE)SUPER!$(RESET)"
 	@echo
