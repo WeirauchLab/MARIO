@@ -7,7 +7,7 @@
 
 set name "mario_pipeline"
 set proper "MARIO pipeline"
-set version "3.9.1"
+set version "3.9.3"
 set descrip "Standard analysis pipeline for NGS data"
 set homepage "https://tfwebdev.research.cchmc.org/gitlab/puj6ug/MARIO_pipeline"
 set issues "https://tfwebdev.research.cchmc.org/gitlab/puj6ug/MARIO_pipeline/issues"

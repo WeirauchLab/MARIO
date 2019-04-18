@@ -6,9 +6,9 @@ use Parallel::ForkManager;
 use Data::Dumper;
 
 my $progName = $0;
-my $version  = '3.9.2';
+my $version  = '3.9.3';
 my $created  = '011017';
-my $modified = '041619';
+my $modified = '041819';
 
 my %options;
 # EHKLNPQRSTUVWYZ
