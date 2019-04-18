@@ -33,8 +33,8 @@ yourself.
 
 ## Installation
 
-You may download the latest release as a compressed archive from GitHub, or
-clone the repository with Git:
+You may download the latest release as a compressed archive
+[from GitHub][grel], or clone the repository with Git:
 
     # GitHub
     git clone https://github.com/WeirauchLab/MARIO.git
@@ -344,5 +344,6 @@ of MARIO) or [Dr. Weirauch][matt] via email.
 [mojo]: https://github.com/kraih/mojo/wiki/Dreamhost#configuring-perl-with-locallib
 [llboot]: https://metacpan.org/pod/local::lib#The-bootstrapping-technique
 [gi]: https://github.com/WeirauchLab/MARIO/issues
+[grel]: https://github.com/WeirauchLab/MARIO/releases
 [mario]: mailto:Mario.Pujato%20-at-%20cchmc.org?subject=MARIO%20feedback&body=(don't%20forget%20to%20change%20%22-at-%22%20to%20%22%40%22%20before%20sending!)
 [matt]: mailto:Matthew.Weirauch%20-at-%20cchmc.org?subject=MARIO%20feedback&body=(don't%20forget%20to%20change%20%22-at-%22%20to%20%22%40%22%20before%20sending!)
