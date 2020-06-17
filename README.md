@@ -324,6 +324,10 @@ of MARIO) or [Dr. Weirauch][matt] via email.
 |-------------------|--------------------------------|--------
 | Dr. Mario Pujato  | Cincinnati Children's Hospital | _primary author_
 
+## License
+
+[GNU General Public License, v2][gplv2]. See [`LICENSE.txt`](LICENSE.txt).
+
 [fastqc]: http://www.bioinformatics.babraham.ac.uk/projects/fastqc/
 [fastqdump]: https://trace.ncbi.nlm.nih.gov/Traces/sra/sra.cgi?view=toolkit_doc&f=fastq-dump
 [sratk]: https://trace.ncbi.nlm.nih.gov/Traces/sra/sra.cgi?view=software
@@ -347,3 +351,4 @@ of MARIO) or [Dr. Weirauch][matt] via email.
 [grel]: https://github.com/WeirauchLab/MARIO/releases
 [mario]: mailto:Mario.Pujato%20-at-%20cchmc.org?subject=MARIO%20feedback&body=(don't%20forget%20to%20change%20%22-at-%22%20to%20%22%40%22%20before%20sending!)
 [matt]: mailto:Matthew.Weirauch%20-at-%20cchmc.org?subject=MARIO%20feedback&body=(don't%20forget%20to%20change%20%22-at-%22%20to%20%22%40%22%20before%20sending!)
+[gplv2]: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
