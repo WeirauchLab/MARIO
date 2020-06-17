@@ -40,7 +40,7 @@ You may download the latest release as a compressed archive
     git clone https://github.com/WeirauchLab/MARIO.git
 
     # Weirauch Lab GitLab
-    git clone https://tfwebdev.research.cchmc.org/gitlab/puj6ug/MARIO_pipeline.git
+    git clone https://tfinternal.research.cchmc.org/gitlab/puj6ug/MARIO_pipeline.git
 
 Then test your installation by run `./MARIO -h` from within the cloned repo or
 expanded archive. If you receive an error about missing Perl modules, see the
