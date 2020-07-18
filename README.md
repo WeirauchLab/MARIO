@@ -8,7 +8,12 @@ The pipeline's flexible design allows for multiple uses, including downloading
 SRA files from NCBI, quality control on FASTQ files, aligning to a genome using
 three different aligners, etc. (detailed in diagram below).
 
-See also the "Usage examples" section below for specific commands.
+The "Usage examples" section, below, demonstrates commands for various use cases.
+
+For the associated publication, see [_Transcription factors operate across
+disease loci, with EBNA2 implicated in autoimmunity._][doi], _Nature
+Genetics_ 2018, by Harley JB, _et. al._; citation information for the MARIO
+pipeline software itself can be found [below](#how-to-cite).
 
 ## External dependencies
 
@@ -16,7 +21,7 @@ See also the "Usage examples" section below for specific commands.
  * [fastq-dump][fastqdump] (part of the [NCBI SRA Toolkit][sratk])
  * [hisat2][]
  * [bowtie2][]
- * [STAR][]
+ * [STAR][] ~ 2.5.x
  * [samtools][]
  * [bedtools][]
  * [picard-tools MarkDuplicates][pmd] (part of [Picard][])
@@ -308,15 +313,27 @@ Priority of input files:
 
 ## How to cite
 
-_The corresponding journal article is still under review._
+Mario Pujato, The MARIO Pipeline, (2018), GitHub repository,
+https://github.com/WeirauchLab/MARIO
+
+### Associated _Nature Genetics_ publication 
+
+[_Transcription factors operate across disease loci, with EBNA2 implicated in
+autoimmunity._][pubmed]
+
+Harley JB, Chen X, Pujato M, Miller D, Maddox A, Forney C, Magnusen AF, Lynch A,
+Chetal K, Yukawa M, Barski A, Salomonis N, Kaufman KM, Kottyan LC, Weirauch MT.
+
+_Nat Genet._ 2018 Apr 16. doi: [10.1038/s41588-018-0102-3][doi].
+
+PMID: 29662164
 
 ## Feedback
 
 Please report any issues with the MARIO pipeline (or feature suggestions) in our
 [GitHub issue tracker][gi].
 
-With other questions, you may contact [Dr. Pujato][mario] (the primary author
-of MARIO) or [Dr. Weirauch][matt] via email.
+With other questions, you may contact [Dr. Matthew Weirauch][matt] via email.
 
 ## Contributors
 
@@ -327,6 +344,7 @@ of MARIO) or [Dr. Weirauch][matt] via email.
 ## License
 
 [GNU General Public License, v2][gplv2]. See [`LICENSE.txt`](LICENSE.txt).
+
 
 [fastqc]: http://www.bioinformatics.babraham.ac.uk/projects/fastqc/
 [fastqdump]: https://trace.ncbi.nlm.nih.gov/Traces/sra/sra.cgi?view=toolkit_doc&f=fastq-dump
@@ -349,6 +367,8 @@ of MARIO) or [Dr. Weirauch][matt] via email.
 [llboot]: https://metacpan.org/pod/local::lib#The-bootstrapping-technique
 [gi]: https://github.com/WeirauchLab/MARIO/issues
 [grel]: https://github.com/WeirauchLab/MARIO/releases
-[mario]: mailto:Mario.Pujato%20-at-%20cchmc.org?subject=MARIO%20feedback&body=(don't%20forget%20to%20change%20%22-at-%22%20to%20%22%40%22%20before%20sending!)
 [matt]: mailto:Matthew.Weirauch%20-at-%20cchmc.org?subject=MARIO%20feedback&body=(don't%20forget%20to%20change%20%22-at-%22%20to%20%22%40%22%20before%20sending!)
+[pubmed]: https://www.ncbi.nlm.nih.gov/pubmed/29662164
+[doi]: https://dx.doi.org/10.1038/s41588-018-0102-3
 [gplv2]: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
+
