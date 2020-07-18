@@ -12,7 +12,7 @@ The "Usage examples" section, below, demonstrates commands for various use cases
 
 For the associated publication, see [_Transcription factors operate across
 disease loci, with EBNA2 implicated in autoimmunity._][doi], _Nature
-Genetics_ 2018, by Harley JB, _et. al._; citation information for the MARIO
+Genetics,_ 2018, by Harley JB, _et al._ Citation information for the MARIO
 pipeline software itself can be found [below](#how-to-cite).
 
 ## External dependencies
@@ -27,8 +27,8 @@ pipeline software itself can be found [below](#how-to-cite).
  * [picard-tools MarkDuplicates][pmd] (part of [Picard][])
  * [macs2][] (also installable [from PyPi][macspypi])
 
-The MARIO pipeline also requires a locally-modified version of [MOODS][],
-included in this repository.
+The MARIO pipeline also depends on a locally-modified version of [MOODS][]
+(using base-2 statistics), included in this repository.
 
 MARIO is written in Perl and has a single third-party [CPAN][] dependency,
 [Parallel::ForkManager][pfm], which might already be installed by your
@@ -319,12 +319,12 @@ https://github.com/WeirauchLab/MARIO
 ### Associated _Nature Genetics_ publication 
 
 [_Transcription factors operate across disease loci, with EBNA2 implicated in
-autoimmunity._][pubmed]
+autoimmunity._][doi]
 
 Harley JB, Chen X, Pujato M, Miller D, Maddox A, Forney C, Magnusen AF, Lynch A,
 Chetal K, Yukawa M, Barski A, Salomonis N, Kaufman KM, Kottyan LC, Weirauch MT.
 
-_Nat Genet._ 2018 Apr 16. doi: [10.1038/s41588-018-0102-3][doi].
+_Nat Genet._ 2018 Apr 16. doi: 10.1038/s41588-018-0102-3
 
 PMID: 29662164
 
