@@ -24,6 +24,7 @@ array set prereqs {
     trimgalore  0.4.2
     bowtie2     2.3.4.1
     samtools    1.8.0
+    star        "2.5.3a"
 }
 
 proc ModulesHelp { } {
