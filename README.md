@@ -367,7 +367,7 @@ With other questions, you may contact [Dr. Matthew Weirauch][matt] via email.
 [llboot]: https://metacpan.org/pod/local::lib#The-bootstrapping-technique
 [gi]: https://github.com/WeirauchLab/MARIO/issues
 [grel]: https://github.com/WeirauchLab/MARIO/releases
-[matt]: mailto:Matthew.Weirauch%20-at-%20cchmc.org?subject=MARIO%20feedback&body=(don't%20forget%20to%20change%20%22-at-%22%20to%20%22%40%22%20before%20sending!)
+[matt]: mailto:Matthew.Weirauch@cchmc.org?subject=MARIO%20pipeline%20feedback)
 [pubmed]: https://www.ncbi.nlm.nih.gov/pubmed/29662164
 [doi]: https://dx.doi.org/10.1038/s41588-018-0102-3
 [gplv2]: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
