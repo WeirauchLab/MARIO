@@ -1,5 +1,7 @@
 # MARIO pipeline
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20652061.svg)](https://doi.org/10.5281/zenodo.20652061)
+
 The MARIO (Measurement of Allelic Ratio Informatics Operator) pipeline was
 designed to identify Allele-Dependent Behavior (ADB) within a sequencing
 experiment at heterozygous positions identified through genotyping data.
@@ -313,8 +315,8 @@ Priority of input files:
 
 ## How to cite
 
-Mario Pujato, The MARIO Pipeline, (2018), GitHub repository,
-https://github.com/WeirauchLab/MARIO
+> Pujato, M., & Cincinnati Children's Hospital Medical Center. (2026).
+> WeirauchLab/MARIO (natgen2018). Zenodo. https://doi.org/10.5281/zenodo.20652061
 
 ### Associated _Nature Genetics_ publication 
 
