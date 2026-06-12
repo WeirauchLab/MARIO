@@ -315,7 +315,7 @@ Priority of input files:
 
 ## How to cite
 
-> Pujato, M., & Cincinnati Children's Hospital Medical Center. (2026).
+> Pujato, M., & Cincinnati Children's Hospital Medical Center. (2018).
 > WeirauchLab/MARIO (natgen2018). Zenodo. https://doi.org/10.5281/zenodo.20652061
 
 ### Associated _Nature Genetics_ publication 
